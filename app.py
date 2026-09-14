@@ -2,12 +2,12 @@ import pandas as pd
 import streamlit as st
 
 st.set_page_config(
-    page_title="CSV Dashboard Generator",
+    page_title="Omer's CSV Dashboard Generator",
     page_icon="📊",
     layout="wide"
 )
 
-st.title("📊 CSV Dashboard Generator")
+st.title("Omer's Dashboards")
 st.write("Upload a CSV file to analyze your data and create charts.")
 
 uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
