@@ -367,16 +367,18 @@ if st.session_state.dashboard_charts:
     for idx, chart_item in enumerate(st.session_state.dashboard_charts):
         with chart_columns[idx % 2]:
             st.caption(f"{chart_item['type']}")
-            container = st.container()
-            with container:
-                st.altair_chart(chart_item["chart"], use_container_width=True)
+            st.altair_chart(chart_item["chart"], use_container_width=True)
 
-            if st.button("×", key=f"delete_{idx}", help="Delete visualization"):
-                st.session_state.dashboard_charts = delete_chart_from_dashboard(st.session_state.dashboard_charts, idx)
+    download_col, delete_col = st.columns([4, 1])
+    with download_col:
+        st.download_button(
+            label="Download Dashboard as Picture",
+            data=build_dashboard_image(st.session_state.dashboard_charts),
+            file_name="dashboard.png",
+            mime="image/png",
+        )
 
-    st.download_button(
-        label="Download Dashboard as Picture",
-        data=build_dashboard_image(st.session_state.dashboard_charts),
-        file_name="dashboard.png",
-        mime="image/png",
-    )
+    with delete_col:
+        if st.button("×", key="delete_dashboard_visualization", help="Delete last visualization"):
+            if st.session_state.dashboard_charts:
+                st.session_state.dashboard_charts = delete_chart_from_dashboard(st.session_state.dashboard_charts, len(st.session_state.dashboard_charts) - 1)
