@@ -1,0 +1,84 @@
+import pandas as pd
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.preprocessing import StandardScaler
+
+# 1. טעינת הנתונים והגדרת טיפוסים
+df = pd.read_csv(
+    "streaming_churn_structured.csv",
+    dtype={
+        "age": int,
+        "tenure_months": int,
+        "monthly_charges": float,
+        "weekly_hours_watched": float,
+        "support_calls": int,
+        "churn": int,
+    },
+)
+
+# 2. הגדרת X ו-y
+X = df[
+    [
+        "age",
+        "tenure_months",
+        "monthly_charges",
+        "weekly_hours_watched",
+        "support_calls",
+    ]
+]
+y = df["churn"]
+
+# 3. פיצול ל-Train ו-Test (80% אימון, 20% בדיקה)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+# 4. נרמול הנתונים (StandardScaler) - קריטי ל-KNN!
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# 5. יצירת מודל KNN (עם 5 שכנים) ואימונו על הנתונים המנורמלים
+knn_model = KNeighborsClassifier(n_neighbors=5)
+knn_model.fit(X_train_scaled, y_train)
+
+# 6. חיזוי על נתוני הבדיקה
+y_pred_knn = knn_model.predict(X_test_scaled)
+
+# 7. בדיקת ביצועי המודל
+print("=== KNN MODEL RESULTS ===")
+print(f"Accuracy: {accuracy_score(y_test, y_pred_knn) * 100:.2f}%\n")
+
+print("=== Confusion Matrix ===")
+print(confusion_matrix(y_test, y_pred_knn))
+
+print("\n=== Classification Report ===")
+print(classification_report(y_test, y_pred_knn))
+
+# 8. חיזוי הסתברות עבור הלקוח החדש (חובה לנרמל גם אותו!)
+new_customer = pd.DataFrame(
+    [
+        {
+            "age": 30,
+            "tenure_months": 3,
+            "monthly_charges": 19.99,
+            "weekly_hours_watched": 2.5,
+            "support_calls": 6,
+        }
+    ]
+)
+
+# נרמול המאפיינים של הלקוח החדש לפי ה-scaler שאומן
+new_customer_scaled = scaler.transform(new_customer)
+
+# חיזוי סיווג והסתברות ב-KNN
+knn_prediction = knn_model.predict(new_customer_scaled)
+knn_probabilities = knn_model.predict_proba(new_customer_scaled)
+knn_churn_prob = knn_probabilities[0][1] * 100
+
+print("=== KNN NEW CUSTOMER PREDICTION ===")
+print(
+    f"Predicted Class: {'Churn (1)' if knn_prediction[0] == 1 else 'Stay (0)'}"
+)
+print(f"Churn Probability: {knn_churn_prob:.1f}%\n")

@@ -1,0 +1,31 @@
+def reverse_digits(number):
+    return int(str(number)[::-1])
+
+def is_palindrome(number):
+    text = str(number)
+    return text == text[::-1]
+
+def make_palindrome(number):
+    current = number
+    sequence = [current]
+
+    print(f"Starting number: {current}")
+
+    while not is_palindrome(current):
+        reverse = reverse_digits(current)
+        new_number = current + reverse
+
+        print(f"{current} + {reverse} = {new_number}")
+        sequence.append(new_number)
+
+        current = new_number
+
+    print("Palindrome reached:", current)
+    print("All numbers printed in the process:")
+    for n in sequence:
+        print(n)
+
+# Take the number from the user
+user_number = int(input("Enter a number: "))
+
+make_palindrome(user_number)
