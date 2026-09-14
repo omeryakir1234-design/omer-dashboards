@@ -170,12 +170,6 @@ def delete_chart_from_dashboard(dashboard, index):
     return dashboard
 
 
-def toggle_dashboard_item_view(dashboard, index):
-    if 0 <= index < len(dashboard):
-        dashboard[index]["view"] = "table" if dashboard[index]["view"] == "chart" else "chart"
-    return dashboard
-
-
 def build_dashboard_image(dashboard):
     """Create a simple PNG dashboard preview image from the saved charts in session state."""
     width = 1024
@@ -373,21 +367,12 @@ if st.session_state.dashboard_charts:
     for idx, chart_item in enumerate(st.session_state.dashboard_charts):
         with chart_columns[idx % 2]:
             st.caption(f"{chart_item['type']}")
-
-            if chart_item["view"] == "table":
-                st.dataframe(chart_item["df"], use_container_width=True)
-            else:
+            container = st.container()
+            with container:
                 st.altair_chart(chart_item["chart"], use_container_width=True)
 
-            action_columns = st.columns([1, 1])
-            with action_columns[0]:
-                if st.button("Delete", key=f"delete_{idx}"):
-                    st.session_state.dashboard_charts = delete_chart_from_dashboard(st.session_state.dashboard_charts, idx)
-
-            with action_columns[1]:
-                button_label = "Turn Back to Visualization" if chart_item["view"] == "table" else "Transform to Table"
-                if st.button(button_label, key=f"toggle_view_{idx}"):
-                    st.session_state.dashboard_charts = toggle_dashboard_item_view(st.session_state.dashboard_charts, idx)
+            if st.button("×", key=f"delete_{idx}", help="Delete visualization"):
+                st.session_state.dashboard_charts = delete_chart_from_dashboard(st.session_state.dashboard_charts, idx)
 
     st.download_button(
         label="Download Dashboard as Picture",

@@ -29,7 +29,7 @@ def test_add_visualization_to_dashboard_list():
     assert dashboard[0]["view"] == "chart"
 
 
-def test_delete_chart_from_dashboard_and_toggle_view():
+def test_delete_chart_from_dashboard_only():
     dashboard = [
         {"type": "Line Chart", "view": "chart", "chart": object(), "df": pd.DataFrame({"a": [1]})},
         {"type": "Bar Chart", "view": "chart", "chart": object(), "df": pd.DataFrame({"a": [2]})},
@@ -38,9 +38,6 @@ def test_delete_chart_from_dashboard_and_toggle_view():
     dashboard = app.delete_chart_from_dashboard(dashboard, 0)
     assert len(dashboard) == 1
     assert dashboard[0]["type"] == "Bar Chart"
-
-    dashboard = app.toggle_dashboard_item_view(dashboard, 0)
-    assert dashboard[0]["view"] == "table"
 
 
 def test_build_dashboard_image_returns_png_bytes():
