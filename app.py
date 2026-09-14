@@ -94,24 +94,37 @@ st.markdown(
         box-shadow: 0 2px 8px var(--shadow);
     }
 
-    .stButton > button {
+    div.stButton > button {
+        height: 44px;
         border: 1px solid var(--blue-deep);
-        border-radius: 16px;
+        border-radius: 12px;
         background: linear-gradient(135deg, var(--blue-deep), var(--blue));
         color: white;
         font-weight: 800;
-        padding: 0.74rem 1.5rem;
-        box-shadow: 0 14px 30px var(--shadow);
-        transition: transform 240ms ease, box-shadow 240ms ease, filter 240ms ease;
+        font-size: 0.88rem;
+        letter-spacing: 0.02em;
+        padding: 0.7rem 1.45rem;
+        box-shadow: 0 10px 24px var(--shadow);
+        transition: transform 220ms ease, box-shadow 220ms ease, filter 220ms ease, background 220ms ease;
         font-family: "Inter", "Segoe UI", Arial, sans-serif;
     }
 
-    .stButton > button:hover {
+    div.stButton > button:hover {
         background: linear-gradient(135deg, var(--blue-dark), var(--blue));
         color: white;
-        transform: translateY(-3px);
-        box-shadow: 0 18px 38px var(--shadow);
-        filter: saturate(1.08);
+        transform: translateY(-2px);
+        box-shadow: 0 14px 30px var(--shadow);
+        filter: saturate(1.10);
+    }
+
+    div.stButton > button:focus {
+        outline: 3px solid rgba(150, 220, 232, 0.75);
+        outline-offset: 3px;
+    }
+
+    div.stButton > button:active {
+        transform: translateY(0);
+        box-shadow: 0 7px 16px var(--shadow);
     }
 
     section[data-testid="stSidebar"] {
