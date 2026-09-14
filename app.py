@@ -98,7 +98,7 @@ st.markdown(
         height: 44px;
         border: 1px solid var(--blue-deep);
         border-radius: 12px;
-        background: linear-gradient(135deg, var(--blue-deep), var(--blue));
+        background: var(--blue-deep);
         color: white;
         font-weight: 800;
         font-size: 0.88rem;
@@ -110,8 +110,8 @@ st.markdown(
     }
 
     div.stButton > button:hover {
-        background: linear-gradient(135deg, var(--blue-dark), var(--blue));
-        color: white;
+        background: var(--blue);
+        color: var(--blue-dark);
         transform: translateY(-2px);
         box-shadow: 0 14px 30px var(--shadow);
         filter: saturate(1.10);
