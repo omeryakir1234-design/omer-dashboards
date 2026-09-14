@@ -1,6 +1,8 @@
 import pandas as pd
 import streamlit as st
 import altair as alt
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
 
 
 st.set_page_config(
@@ -158,6 +160,45 @@ def add_chart_to_dashboard(dashboard, chart, chart_type):
         "chart": chart,
     })
     return dashboard
+
+
+def build_dashboard_image(dashboard):
+    """Create a simple PNG dashboard preview image from the saved charts in session state."""
+    width = 1024
+    height = 700 + max(0, len(dashboard) - 1) * 120
+    image = Image.new("RGB", (width, height), color=(239, 247, 252))
+    draw = ImageDraw.Draw(image)
+
+    try:
+        font_header = ImageFont.truetype("arial.ttf", 36)
+        font_body = ImageFont.truetype("arial.ttf", 22)
+        font_small = ImageFont.truetype("arial.ttf", 16)
+    except Exception:
+        font_header = ImageFont.load_default()
+        font_body = ImageFont.load_default()
+        font_small = ImageFont.load_default()
+
+    title = "Omer's Dashboard"
+    draw.rectangle((0, 0, width, height), fill=(239, 247, 252))
+    draw.rectangle((40, 30, width - 40, 110), fill=(30, 76, 110))
+    draw.text((70, 50), title, fill=(250, 251, 252), font=font_header)
+
+    y = 140
+    for idx, item in enumerate(dashboard):
+        chart_type = item.get("type", "Chart")
+        x0 = 60
+        y0 = y
+        x1 = width - 60
+        y1 = y + 90
+        draw.rounded_rectangle((x0, y0, x1, y1), radius=14, fill=(255, 255, 255))
+        draw.rounded_rectangle((x0 + 8, y0 + 8, x0 + 30, y0 + 30), radius=6, fill=(120, 197, 235))
+        draw.text((x0 + 44, y0 + 15), f"{idx + 1}. {chart_type}", fill=(30, 76, 110), font=font_body)
+        draw.text((x0 + 44, y0 + 50), "Visualization", fill=(84, 108, 126), font=font_small)
+        y += 120
+
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def build_chart(df, chart_type, selected_col, numeric_columns, categorical_columns, x_col=None, y_col=None, category_col=None):
@@ -318,3 +359,10 @@ if st.session_state.dashboard_charts:
         with chart_columns[idx % 2]:
             st.caption(f"{chart_item['type']}")
             st.altair_chart(chart_item['chart'], use_container_width=True)
+
+    st.download_button(
+        label="Download Dashboard as Picture",
+        data=build_dashboard_image(st.session_state.dashboard_charts),
+        file_name="dashboard.png",
+        mime="image/png",
+    )

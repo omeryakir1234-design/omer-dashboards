@@ -25,3 +25,10 @@ def test_add_visualization_to_dashboard_list():
     assert len(dashboard) == 1
     assert dashboard[0]["type"] == "Line Chart"
     assert dashboard[0]["chart"] is chart
+
+
+def test_build_dashboard_image_returns_png_bytes():
+    dashboard = [{"type": "Line Chart", "chart": None}]
+    png = app.build_dashboard_image(dashboard)
+
+    assert png.startswith(b"\x89PNG")
