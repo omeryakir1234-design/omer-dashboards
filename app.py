@@ -7,6 +7,25 @@ st.set_page_config(
     layout="wide"
 )
 
+st.markdown(
+    """
+    <style>
+    [data-testid="stAppViewContainer"] {
+        background: linear-gradient(135deg, #1e88e5 0%, #90caf9 100%);
+    }
+
+    [data-testid="stHeader"] {
+        background: rgba(0, 0, 0, 0);
+    }
+
+    .stApp {
+        color: white;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.title("Omer's CSV Dashboard Generator")
 st.write("Upload a CSV file to analyze your data and create charts.")
 
