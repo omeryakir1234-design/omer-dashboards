@@ -154,11 +154,25 @@ st.markdown(
 )
 
 
-def add_chart_to_dashboard(dashboard, chart, chart_type):
+def add_chart_to_dashboard(dashboard, chart, chart_type, df=None):
     dashboard.append({
         "type": chart_type,
         "chart": chart,
+        "df": df,
+        "view": "chart",
     })
+    return dashboard
+
+
+def delete_chart_from_dashboard(dashboard, index):
+    if 0 <= index < len(dashboard):
+        del dashboard[index]
+    return dashboard
+
+
+def toggle_dashboard_item_view(dashboard, index):
+    if 0 <= index < len(dashboard):
+        dashboard[index]["view"] = "table" if dashboard[index]["view"] == "chart" else "chart"
     return dashboard
 
 
@@ -345,6 +359,7 @@ if uploaded_file is not None:
                     st.session_state.dashboard_charts,
                     chart,
                     chart_type,
+                    df,
                 )
                 st.success("Visualization added to the dashboard.")
 
@@ -358,7 +373,21 @@ if st.session_state.dashboard_charts:
     for idx, chart_item in enumerate(st.session_state.dashboard_charts):
         with chart_columns[idx % 2]:
             st.caption(f"{chart_item['type']}")
-            st.altair_chart(chart_item['chart'], use_container_width=True)
+
+            if chart_item["view"] == "table":
+                st.dataframe(chart_item["df"], use_container_width=True)
+            else:
+                st.altair_chart(chart_item["chart"], use_container_width=True)
+
+            action_columns = st.columns([1, 1])
+            with action_columns[0]:
+                if st.button("Delete", key=f"delete_{idx}"):
+                    st.session_state.dashboard_charts = delete_chart_from_dashboard(st.session_state.dashboard_charts, idx)
+
+            with action_columns[1]:
+                button_label = "Turn Back to Visualization" if chart_item["view"] == "table" else "Transform to Table"
+                if st.button(button_label, key=f"toggle_view_{idx}"):
+                    st.session_state.dashboard_charts = toggle_dashboard_item_view(st.session_state.dashboard_charts, idx)
 
     st.download_button(
         label="Download Dashboard as Picture",
