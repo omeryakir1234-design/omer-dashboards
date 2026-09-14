@@ -96,13 +96,13 @@ st.markdown(
 
     div.stButton > button {
         height: 44px;
-        border: 1px solid var(--blue-deep);
+        border: 1px solid var(--blue-dark);
         border-radius: 12px;
-        background: var(--blue-deep);
-        color: #eefbff;
-        font-weight: 800;
+        background: var(--blue-dark);
+        color: #f8fdff;
+        font-weight: 900;
         font-size: 0.88rem;
-        letter-spacing: 0.02em;
+        letter-spacing: 0.03em;
         padding: 0.7rem 1.45rem;
         box-shadow: 0 10px 24px var(--shadow);
         transition: transform 220ms ease, box-shadow 220ms ease, filter 220ms ease, background 220ms ease;
@@ -110,11 +110,11 @@ st.markdown(
     }
 
     div.stButton > button:hover {
-        background: var(--blue);
-        color: var(--blue-dark);
+        background: var(--blue-deep);
+        color: #f8fdff;
         transform: translateY(-2px);
         box-shadow: 0 14px 30px var(--shadow);
-        filter: saturate(1.10);
+        filter: saturate(1.12);
     }
 
     div.stButton > button:focus {
