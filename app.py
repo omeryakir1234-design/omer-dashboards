@@ -96,10 +96,10 @@ st.markdown(
 
     div.stButton > button {
         height: 44px;
-        border: 1px solid var(--blue-dark);
+        border: 1px solid var(--blue);
         border-radius: 12px;
-        background: var(--blue-dark);
-        color: #f8fdff;
+        background: var(--blue);
+        color: var(--blue-dark);
         font-weight: 900;
         font-size: 0.88rem;
         letter-spacing: 0.03em;
