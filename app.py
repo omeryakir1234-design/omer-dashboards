@@ -99,7 +99,7 @@ st.markdown(
         border: 1px solid var(--blue-deep);
         border-radius: 12px;
         background: var(--blue-deep);
-        color: white;
+        color: #eefbff;
         font-weight: 800;
         font-size: 0.88rem;
         letter-spacing: 0.02em;
