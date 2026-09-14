@@ -12,16 +12,90 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+    :root {
+        --page-text: #122b40;
+        --page-soft: #eef7fb;
+        --line: #dceaf4;
+        --card: #ffffff;
+        --muted: #667f94;
+        --blue: #6cb9e8;
+        --blue-deep: #155e8c;
+    }
+
     [data-testid="stAppViewContainer"] {
-        background: linear-gradient(135deg, #bfe7ff 0%, #eaf6ff 100%);
+        background:
+            radial-gradient(circle at 82% 8%, rgba(180, 226, 248, 0.9), transparent 16%),
+            radial-gradient(circle at 10% 90%, rgba(214, 239, 251, 0.8), transparent 16%),
+            linear-gradient(135deg, #eefaff 0%, #dcecfb 100%);
+        color: var(--page-text);
     }
 
     [data-testid="stHeader"] {
-        background: rgba(0, 0, 0, 0);
+        background: transparent;
+        box-shadow: none;
     }
 
     .stApp {
-        color: #0b1f3a;
+        color: var(--page-text);
+    }
+
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 3rem;
+        max-width: min(1400px, calc(100vw - 2rem));
+    }
+
+    div[data-testid="stFileUploader"] {
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        background: rgba(255,255,255,0.78);
+        box-shadow: 0 14px 38px rgba(45, 77, 115, 0.08);
+    }
+
+    div[data-testid="stDataFrame"] {
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        background: var(--card);
+        overflow: hidden;
+    }
+
+    .stSelectbox > div > div,
+    .stMultiSelect > div > div {
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        background: var(--card);
+    }
+
+    .stButton > button {
+        border: none;
+        border-radius: 14px;
+        background: var(--blue-deep);
+        color: white;
+        font-weight: 700;
+        padding: 0.75rem 1.4rem;
+        box-shadow: 0 12px 24px rgba(21, 94, 140, 0.16);
+        transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
+    }
+
+    .stButton > button:hover {
+        background: var(--blue);
+        color: var(--page-text);
+        transform: translateY(-2px);
+        box-shadow: 0 16px 32px rgba(21, 94, 140, 0.22);
+    }
+
+    h1, h2, h3 {
+        color: var(--page-text);
+        letter-spacing: -0.04em;
+        font-family: "Inter", "Segoe UI", Arial, sans-serif;
+    }
+
+    .stSubheader {
+        color: var(--page-text);
+    }
+
+    .css-1v0mbdj, .css-1n7v2u7 {
+        padding: 1rem 0;
     }
     </style>
     """,
