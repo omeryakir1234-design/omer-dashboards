@@ -13,21 +13,26 @@ st.markdown(
     """
     <style>
     :root {
-        --page-text: #122b40;
-        --page-soft: #eef7fb;
-        --line: #dceaf4;
-        --card: #ffffff;
-        --muted: #667f94;
-        --blue: #6cb9e8;
-        --blue-deep: #155e8c;
+        --text: #172a3a;
+        --text-soft: #415a70;
+        --muted: #72879c;
+        --line: #ccdce8;
+        --glass: rgba(252, 254, 255, 0.72);
+        --panel: #ffffff;
+        --panel-soft: #eef8fd;
+        --blue: #75b8dd;
+        --blue-deep: #184e75;
+        --blue-dark: #0d3047;
+        --aqua: #96dce6;
+        --shadow: rgba(18, 49, 80, 0.16);
     }
 
     [data-testid="stAppViewContainer"] {
         background:
-            radial-gradient(circle at 82% 8%, rgba(180, 226, 248, 0.9), transparent 16%),
-            radial-gradient(circle at 10% 90%, rgba(214, 239, 251, 0.8), transparent 16%),
-            linear-gradient(135deg, #eefaff 0%, #dcecfb 100%);
-        color: var(--page-text);
+            radial-gradient(circle at 76% 6%, rgba(183, 226, 250, 0.95), transparent 15%),
+            radial-gradient(circle at 16% 92%, rgba(155, 220, 232, 0.60), transparent 14%),
+            linear-gradient(135deg, #eaf9ff 0%, #d9edf9 52%, #c8dde8 100%);
+        color: var(--text);
     }
 
     [data-testid="stHeader"] {
@@ -36,62 +41,93 @@ st.markdown(
     }
 
     .stApp {
-        color: var(--page-text);
+        color: var(--text);
     }
 
     .block-container {
         padding-top: 2rem;
         padding-bottom: 3rem;
-        max-width: min(1400px, calc(100vw - 2rem));
+        max-width: min(1440px, calc(100vw - 3rem));
+    }
+
+    h1 {
+        font-size: clamp(2.8rem, 4vw, 4rem) !important;
+        font-weight: 700 !important;
+        color: var(--blue-dark) !important;
+        letter-spacing: -0.045em !important;
+        margin-bottom: 0.4rem !important;
+    }
+
+    h2, h3 {
+        color: var(--blue-dark) !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.035em !important;
+    }
+
+    p, .stMarkdown {
+        color: var(--text-soft);
     }
 
     div[data-testid="stFileUploader"] {
-        border-radius: 14px;
+        border-radius: 18px;
         border: 1px solid var(--line);
-        background: rgba(255,255,255,0.78);
-        box-shadow: 0 14px 38px rgba(45, 77, 115, 0.08);
+        background: var(--glass);
+        box-shadow: 0 16px 44px var(--shadow);
+        backdrop-filter: blur(10px);
     }
 
     div[data-testid="stDataFrame"] {
         border-radius: 16px;
         border: 1px solid var(--line);
-        background: var(--card);
+        background: var(--panel);
+        box-shadow: 0 12px 30px var(--shadow);
         overflow: hidden;
     }
 
     .stSelectbox > div > div,
-    .stMultiSelect > div > div {
+    .stMultiSelect > div > div,
+    .stNumberInput > div > div,
+    .stTextInput > div > div {
         border-radius: 14px;
         border: 1px solid var(--line);
-        background: var(--card);
+        background: var(--panel);
+        box-shadow: 0 2px 8px var(--shadow);
     }
 
     .stButton > button {
-        border: none;
-        border-radius: 14px;
-        background: var(--blue-deep);
+        border: 1px solid var(--blue-deep);
+        border-radius: 16px;
+        background: linear-gradient(135deg, var(--blue-deep), var(--blue));
         color: white;
-        font-weight: 700;
-        padding: 0.75rem 1.4rem;
-        box-shadow: 0 12px 24px rgba(21, 94, 140, 0.16);
-        transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
-    }
-
-    .stButton > button:hover {
-        background: var(--blue);
-        color: var(--page-text);
-        transform: translateY(-2px);
-        box-shadow: 0 16px 32px rgba(21, 94, 140, 0.22);
-    }
-
-    h1, h2, h3 {
-        color: var(--page-text);
-        letter-spacing: -0.04em;
+        font-weight: 800;
+        padding: 0.74rem 1.5rem;
+        box-shadow: 0 14px 30px var(--shadow);
+        transition: transform 240ms ease, box-shadow 240ms ease, filter 240ms ease;
         font-family: "Inter", "Segoe UI", Arial, sans-serif;
     }
 
-    .stSubheader {
-        color: var(--page-text);
+    .stButton > button:hover {
+        background: linear-gradient(135deg, var(--blue-dark), var(--blue));
+        color: white;
+        transform: translateY(-3px);
+        box-shadow: 0 18px 38px var(--shadow);
+        filter: saturate(1.08);
+    }
+
+    section[data-testid="stSidebar"] {
+        background: rgba(255,255,255,0.68);
+        border-right: 1px solid var(--line);
+        box-shadow: 0 12px 36px var(--shadow);
+    }
+
+    div[data-testid="stAlert"] {
+        border-radius: 14px;
+    }
+
+    .stCaption {
+        color: var(--text-soft);
+        font-weight: 700;
+        letter-spacing: 0.04em;
     }
 
     .css-1v0mbdj, .css-1n7v2u7 {
