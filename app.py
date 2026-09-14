@@ -12,7 +12,7 @@ st.markdown(
     """
     <style>
     [data-testid="stAppViewContainer"] {
-        background: linear-gradient(135deg, #1e88e5 0%, #90caf9 100%);
+        background: linear-gradient(135deg, #bfe7ff 0%, #eaf6ff 100%);
     }
 
     [data-testid="stHeader"] {
@@ -20,7 +20,7 @@ st.markdown(
     }
 
     .stApp {
-        color: white;
+        color: #0b1f3a;
     }
     </style>
     """,
