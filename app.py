@@ -31,10 +31,9 @@ st.markdown(
 
     [data-testid="stAppViewContainer"] {
         background:
-            linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px),
-            #111a21;
-        background-size: 28px 28px;
+            radial-gradient(circle at 76% 6%, rgba(183, 226, 250, 0.95), transparent 15%),
+            radial-gradient(circle at 16% 92%, rgba(155, 220, 232, 0.60), transparent 14%),
+            linear-gradient(135deg, #eaf9ff 0%, #d9edf9 52%, #c8dde8 100%);
         color: var(--text);
     }
 
