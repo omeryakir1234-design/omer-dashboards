@@ -28,13 +28,14 @@ st.markdown(
     div[data-testid="stVerticalBlockBorderWrapper"] { background:var(--panel); border:1px solid var(--line); border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,.2); }
     div[data-testid="stFileUploader"],div[data-testid="stDataFrame"] { border:1px solid var(--line); border-radius:6px; background:rgba(25,35,43,.92); }
     .stSelectbox > div > div,.stMultiSelect > div > div,.stNumberInput > div > div,.stTextInput > div > div { border-radius:6px; border:1px solid var(--line); background:#18232b; }
-    .stSelectbox label,.stMultiSelect label,.stNumberInput label,.stTextInput label,.stSlider label { color:#d8e7ee !important; }
-    [data-baseweb="select"], [data-baseweb="select"] > div, [data-baseweb="select"] [data-baseweb="input"] { background:#18232b !important; color:#ffffff !important; }
-    [data-baseweb="select"] span, [data-baseweb="select"] input, [data-baseweb="select"] svg { color:#ffffff !important; fill:#ffffff !important; }
-    [role="listbox"], [role="listbox"] [role="option"] { background:#18232b !important; color:#ffffff !important; }
-    [role="listbox"] [role="option"]:hover, [role="listbox"] [aria-selected="true"] { background:#2789aa !important; color:#ffffff !important; }
-    .stTextInput input,.stNumberInput input { background:#18232b !important; color:#ffffff !important; caret-color:#80d8d1; }
-    .stTextInput input::placeholder,.stNumberInput input::placeholder { color:#aab7c4 !important; }
+    .stSelectbox label,.stMultiSelect label,.stNumberInput label,.stTextInput label,.stSlider label { color:#ffffff !important; }
+    [data-testid="stSelectbox"] [data-baseweb="select"], [data-testid="stMultiSelect"] [data-baseweb="select"], [data-baseweb="select"] > div, [data-baseweb="select"] [data-baseweb="input"] { background:#18232b !important; color:#ffffff !important; }
+    [data-testid="stSelectbox"] [data-baseweb="select"] *, [data-testid="stMultiSelect"] [data-baseweb="select"] *, [data-baseweb="select"] span, [data-baseweb="select"] input, [data-baseweb="select"] svg { color:#ffffff !important; fill:#ffffff !important; -webkit-text-fill-color:#ffffff !important; }
+    [data-testid="stSelectbox"] [data-baseweb="select"] input::placeholder, [data-testid="stMultiSelect"] [data-baseweb="select"] input::placeholder { color:#aab7c4 !important; -webkit-text-fill-color:#aab7c4 !important; opacity:1 !important; }
+    [role="listbox"], [role="listbox"] [role="option"], [role="listbox"] [role="option"] * { background:#18232b !important; color:#ffffff !important; -webkit-text-fill-color:#ffffff !important; }
+    [role="listbox"] [role="option"]:hover, [role="listbox"] [aria-selected="true"], [role="listbox"] [role="option"]:hover * { background:#2789aa !important; color:#ffffff !important; -webkit-text-fill-color:#ffffff !important; }
+    .stTextInput input,.stNumberInput input { background:#18232b !important; color:#ffffff !important; -webkit-text-fill-color:#ffffff !important; caret-color:#80d8d1; }
+    .stTextInput input::placeholder,.stNumberInput input::placeholder { color:#aab7c4 !important; -webkit-text-fill-color:#aab7c4 !important; opacity:1 !important; }
     div.stButton > button { height:38px; border:1px solid var(--blue); border-radius:4px; background:var(--blue); color:#ffffff !important; font-weight:800; }
     div.stButton > button:hover { background:var(--deep); color:#ffffff !important; }
     div.stButton > button p, div.stButton > button span { color:#ffffff !important; }
