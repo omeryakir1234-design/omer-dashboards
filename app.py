@@ -61,7 +61,7 @@ st.markdown(
     }
 
     h2, h3 {
-        color: var(--blue-dark) !important;
+        color: #000000 !important;
         font-weight: 700 !important;
         letter-spacing: -0.035em !important;
     }
