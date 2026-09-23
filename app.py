@@ -1,4 +1,5 @@
 from io import BytesIO
+from copy import deepcopy
 from uuid import uuid4
 
 import altair as alt
@@ -38,9 +39,76 @@ st.markdown(
 
 
 PALETTE = ["#2789aa", "#54b8d5", "#80d8d1", "#17647f", "#9adfe5", "#3b9ab8", "#b8eef0"]
+DEFAULT_BACKGROUND = "#d9edf9"
+DEFAULT_STYLING = {
+    "background_color": DEFAULT_BACKGROUND,
+    "main_color": "#54b8d5",
+    "color_mode": "Categorical palette",
+    "palette": PALETTE.copy(),
+    "category_colors": {},
+    "heatmap_scale": "Blue → Aqua",
+    "heatmap_min": "#eaf9ff",
+    "heatmap_mid": "#54b8d5",
+    "heatmap_max": "#2789aa",
+    "reverse_heatmap": False,
+    "marker_opacity": 0.7,
+    "marker_border": "#17647f",
+    "marker_size": 80,
+    "kpi_mode": "Static",
+    "kpi_apply_to": "KPI number",
+    "kpi_thresholds": [],
+}
 VIS_TYPES = ["Bar", "Line", "Area", "KPI / Metric", "Pie", "Heat Map", "Waffle", "Map", "Treemap", "Word Cloud"]
 AGGREGATIONS = ["Count", "Unique count", "Sum", "Average", "Min", "Max", "Median"]
 DATE_GROUPS = ["None", "Minute", "Hour", "Day", "Week", "Month", "Year"]
+
+
+def default_styling():
+    return {key: (value.copy() if isinstance(value, (list, dict)) else value) for key, value in DEFAULT_STYLING.items()}
+
+
+def ensure_styling(config):
+    styling = default_styling()
+    styling.update(config.get("styling") or {})
+    styling["palette"] = list(styling.get("palette") or PALETTE)
+    styling["category_colors"] = dict(styling.get("category_colors") or {})
+    config["styling"] = styling
+    return styling
+
+
+def valid_color(value, fallback):
+    value = str(value or "").strip()
+    if len(value) == 7 and value.startswith("#"):
+        try:
+            int(value[1:], 16)
+            return value.lower()
+        except ValueError:
+            pass
+    return fallback
+
+
+def readable_text_color(background):
+    background = valid_color(background, DEFAULT_BACKGROUND).lstrip("#")
+    channels = [int(background[index:index + 2], 16) for index in (0, 2, 4)]
+    luminance = (0.299 * channels[0]) + (0.587 * channels[1]) + (0.114 * channels[2])
+    return "#f4fbfd" if luminance < 145 else "#10222c"
+
+
+def styling_palette(config, categories=None):
+    styling = ensure_styling(config)
+    categories = [str(category) for category in (categories or [])]
+    if styling.get("color_mode") == "Single color":
+        return [styling["main_color"] for _ in categories] or [styling["main_color"]]
+    palette = [valid_color(color, PALETTE[index % len(PALETTE)]) for index, color in enumerate(styling["palette"])] or PALETTE
+    if styling.get("color_mode") == "Custom colors":
+        return [valid_color(styling["category_colors"].get(category), palette[index % len(palette)]) for index, category in enumerate(categories)] or palette
+    return [palette[index % len(palette)] for index, _ in enumerate(categories)] or palette
+
+
+def visualization_properties(chart, config):
+    styling = ensure_styling(config)
+    text_color = readable_text_color(styling["background_color"])
+    return chart.properties(background=styling["background_color"]).configure_axis(labelColor=text_color, titleColor=text_color, domainColor=text_color, tickColor=text_color).configure_legend(labelColor=text_color, titleColor=text_color)
 
 
 def dashboard_chart_theme():
@@ -85,13 +153,13 @@ def default_config(chart_type, field_types):
     all_fields = field_types["all"]
     metric = numeric[0] if numeric else (all_fields[0] if all_fields else None)
     dimension = categorical[0] if categorical else metric
-    return {"type": chart_type.lower().replace(" / ", "_"), "title": chart_type, "x_field": dimension, "y_field": metric,
+    return {"type": chart_type.lower().replace(" / ", "_").replace(" ", "_"), "title": chart_type, "x_field": dimension, "y_field": metric,
             "group_field": dimension, "breakdown": None, "aggregation": "Average" if numeric else "Count", "date_group": "None",
             "sort": "Metric", "sort_direction": "Descending", "top_n": 20, "orientation": "Vertical", "legend": True,
             "labels": False, "points": True, "stacked": False, "donut": False, "donut_hole": 0.45, "target": None,
             "subtitle": "", "precision": 2, "prefix": "", "suffix": "", "percentage": False, "cells": 100,
             "min_frequency": 1, "max_words": 30, "stop_words": "the, a, an, and, or, to, of", "font_min": 12, "font_max": 44,
-            "filters": []}
+            "filters": [], "styling": default_styling()}
 
 
 def apply_filters(df, filters):
@@ -164,9 +232,13 @@ def build_bar_chart(df, config):
         enc = {"y": alt.Y(f"{x}:N", sort="-x", title=x), "x": alt.X("value:Q", title=config.get("aggregation"))}
     else:
         enc = {"x": alt.X(f"{x}:N", sort="-y", title=x), "y": alt.Y("value:Q", title=config.get("aggregation"))}
-    if config.get("breakdown"): enc["color"] = alt.Color(f"{config['breakdown']}:N", scale=alt.Scale(range=PALETTE), legend=alt.Legend() if config.get("legend", True) else None)
+    styling = ensure_styling(config)
+    if config.get("breakdown"):
+        categories = grouped[config["breakdown"]].dropna().astype(str).unique().tolist()
+        enc["color"] = alt.Color(f"{config['breakdown']}:N", scale=alt.Scale(range=styling_palette(config, categories)), legend=alt.Legend() if config.get("legend", True) else None)
     if config.get("labels"): enc["text"] = alt.Text("value:Q", format=".2f")
-    return alt.Chart(grouped).mark_bar().encode(**enc).properties(title=config.get("title"), height=360)
+    mark = alt.Chart(grouped).mark_bar(color=styling["main_color"] if not config.get("breakdown") else None).encode(**enc).properties(title=config.get("title"), height=360)
+    return visualization_properties(mark, config)
 
 
 def build_line_chart(df, config, mark="line"):
@@ -174,23 +246,39 @@ def build_line_chart(df, config, mark="line"):
     if grouped.empty: return None
     x_type = "T" if config.get("date_group") != "None" else "N"
     enc = {"x": alt.X(f"{config.get('x_field')}:{x_type}", title=config.get("x_field")), "y": alt.Y("value:Q", title=config.get("aggregation"))}
-    if config.get("breakdown"): enc["color"] = alt.Color(f"{config['breakdown']}:N", scale=alt.Scale(range=PALETTE), legend=alt.Legend() if config.get("legend", True) else None)
-    chart = alt.Chart(grouped).mark_area(opacity=.55) if mark == "area" else alt.Chart(grouped).mark_line(interpolate="monotone", point=config.get("points", True))
-    return chart.encode(**enc).properties(title=config.get("title"), height=360)
+    styling = ensure_styling(config)
+    if config.get("breakdown"):
+        categories = grouped[config["breakdown"]].dropna().astype(str).unique().tolist()
+        enc["color"] = alt.Color(f"{config['breakdown']}:N", scale=alt.Scale(range=styling_palette(config, categories)), legend=alt.Legend() if config.get("legend", True) else None)
+    if mark == "area":
+        chart = alt.Chart(grouped).mark_area(opacity=.55, color=styling["main_color"] if not config.get("breakdown") else None)
+    else:
+        chart = alt.Chart(grouped).mark_line(interpolate="monotone", point=config.get("points", True), color=styling["main_color"] if not config.get("breakdown") else None)
+    return visualization_properties(chart.encode(**enc).properties(title=config.get("title"), height=360), config)
 
 
 def build_metric(df, config):
+    styling = ensure_styling(config)
     value = aggregate_series(apply_filters(df, config.get("filters", [])), config.get("y_field"), config.get("aggregation", "Count"))
     formatted = f"{config.get('prefix', '')}{value:,.{int(config.get('precision', 2))}f}{config.get('suffix', '')}" if isinstance(value, (float, int)) else str(value)
     if config.get("percentage"): formatted = f"{float(value) * 100:,.{int(config.get('precision', 2))}f}%"
-    return {"value": formatted, "title": config.get("title", "Metric"), "subtitle": config.get("subtitle", "")}
+    number_color = styling["main_color"]
+    if styling.get("kpi_mode") == "Dynamic":
+        for threshold in styling.get("kpi_thresholds", []):
+            minimum = threshold.get("minimum", float("-inf")); maximum = threshold.get("maximum", float("inf"))
+            if minimum <= float(value) <= maximum:
+                number_color = valid_color(threshold.get("color"), number_color)
+                break
+    return {"value": formatted, "title": config.get("title", "Metric"), "subtitle": config.get("subtitle", ""), "color": number_color, "background": styling["background_color"], "apply_to": styling.get("kpi_apply_to", "KPI number")}
 
 
 def build_pie_chart(df, config):
     _, grouped = chart_frame(df, {**config, "x_field": config.get("group_field")})
     if grouped.empty: return None
     grouped = grouped.nlargest(int(config.get("top_n", 10)), "value")
-    return alt.Chart(grouped).mark_arc(innerRadius=70 if config.get("donut") else 0).encode(theta=alt.Theta("value:Q"), color=alt.Color(f"{config.get('group_field')}:N", scale=alt.Scale(range=PALETTE), legend=alt.Legend() if config.get("legend", True) else None), tooltip=[config.get("group_field"), alt.Tooltip("value:Q", format=",.2f")]).properties(title=config.get("title"), height=360)
+    categories = grouped[config["group_field"]].dropna().astype(str).tolist()
+    chart = alt.Chart(grouped).mark_arc(innerRadius=70 if config.get("donut") else 0).encode(theta=alt.Theta("value:Q"), color=alt.Color(f"{config.get('group_field')}:N", scale=alt.Scale(range=styling_palette(config, categories)), legend=alt.Legend() if config.get("legend", True) else None), tooltip=[config.get("group_field"), alt.Tooltip("value:Q", format=",.2f")]).properties(title=config.get("title"), height=360)
+    return visualization_properties(chart, config)
 
 
 def build_heatmap(df, config):
@@ -203,8 +291,11 @@ def build_heatmap(df, config):
         grouped["row"] = "All"
         y = "row"
     if grouped.empty: return None
-    chart = alt.Chart(grouped).mark_rect().encode(x=alt.X(f"{x}:N"), y=alt.Y(f"{y}:N"), color=alt.Color("value:Q", scale=alt.Scale(range=["#d9edf9", "#2789aa"])), tooltip=list(grouped.columns))
-    return chart.properties(title=config.get("title"), height=360)
+    styling = ensure_styling(config)
+    scale_colors = {"Blue": ["#eaf9ff", "#2789aa"], "Aqua": ["#eaf9ff", "#80d8d1"], "Blue → Aqua": ["#eaf9ff", "#2789aa", "#80d8d1"], "Light → Dark": ["#eaf9ff", "#17647f"]}.get(styling.get("heatmap_scale"), [styling["heatmap_min"], styling["heatmap_mid"], styling["heatmap_max"]])
+    if styling.get("reverse_heatmap"): scale_colors = list(reversed(scale_colors))
+    chart = alt.Chart(grouped).mark_rect().encode(x=alt.X(f"{x}:N"), y=alt.Y(f"{y}:N"), color=alt.Color("value:Q", scale=alt.Scale(range=scale_colors)), tooltip=list(grouped.columns))
+    return visualization_properties(chart.properties(title=config.get("title"), height=360), config)
 
 
 def build_waffle(df, config):
@@ -217,7 +308,8 @@ def build_waffle(df, config):
         count = round((item["value"] / total) * cells) if total else 0
         for _ in range(count): rows.append({"column": cursor % 10, "row": cursor // 10, "category": str(item[group])}); cursor += 1
     if not rows: return None
-    return alt.Chart(pd.DataFrame(rows)).mark_rect(stroke="#d9edf9", strokeWidth=1).encode(x=alt.X("column:O", axis=None), y=alt.Y("row:O", sort="descending", axis=None), color=alt.Color("category:N", scale=alt.Scale(range=PALETTE), legend=alt.Legend() if config.get("legend", True) else None), tooltip=["category"]).properties(title=config.get("title"), width=360, height=360)
+    chart = alt.Chart(pd.DataFrame(rows)).mark_rect(stroke="#d9edf9", strokeWidth=1).encode(x=alt.X("column:O", axis=None), y=alt.Y("row:O", sort="descending", axis=None), color=alt.Color("category:N", scale=alt.Scale(range=styling_palette(config, grouped[group].astype(str).tolist())), legend=alt.Legend() if config.get("legend", True) else None), tooltip=["category"]).properties(title=config.get("title"), width=360, height=360)
+    return visualization_properties(chart, config)
 
 
 def build_map(df, config):
@@ -225,8 +317,13 @@ def build_map(df, config):
     if not lat or not lon or lat not in df.columns or lon not in df.columns: return None
     work = df.copy(); work[lat] = pd.to_numeric(work[lat], errors="coerce"); work[lon] = pd.to_numeric(work[lon], errors="coerce"); work = work.dropna(subset=[lat, lon])
     if work.empty: return None
+    styling = ensure_styling(config)
     enc = {"latitude": alt.Latitude(f"{lat}:Q"), "longitude": alt.Longitude(f"{lon}:Q"), "tooltip": [lat, lon]}
-    return alt.Chart(work).mark_circle(opacity=.7, color=PALETTE[0]).encode(**enc).properties(title=config.get("title"), height=380)
+    if config.get("breakdown") and config["breakdown"] in work.columns:
+        categories = work[config["breakdown"]].dropna().astype(str).unique().tolist()
+        enc["color"] = alt.Color(f"{config['breakdown']}:N", scale=alt.Scale(range=styling_palette(config, categories)))
+    marker = alt.Chart(work).mark_circle(opacity=styling["marker_opacity"], color=None if config.get("breakdown") else styling["main_color"], stroke=styling["marker_border"], size=styling["marker_size"])
+    return visualization_properties(marker.encode(**enc).properties(title=config.get("title"), height=380), config)
 
 
 def build_treemap(df, config):
@@ -234,7 +331,9 @@ def build_treemap(df, config):
     _, grouped = chart_frame(df, {**config, "x_field": group})
     if grouped.empty: return None
     grouped = grouped.nlargest(int(config.get("top_n", 20)), "value")
-    return alt.Chart(grouped).mark_bar().encode(x=alt.X(f"{group}:N", axis=None), y=alt.Y("value:Q", axis=None), color=alt.Color(f"{group}:N", scale=alt.Scale(range=PALETTE), legend=None), tooltip=[group, "value:Q"]).properties(title=config.get("title"), height=360)
+    categories = grouped[group].dropna().astype(str).tolist()
+    chart = alt.Chart(grouped).mark_bar().encode(x=alt.X(f"{group}:N", axis=None), y=alt.Y("value:Q", axis=None), color=alt.Color(f"{group}:N", scale=alt.Scale(range=styling_palette(config, categories)), legend=None), tooltip=[group, "value:Q"]).properties(title=config.get("title"), height=360)
+    return visualization_properties(chart, config)
 
 
 def build_wordcloud(df, config):
@@ -244,7 +343,12 @@ def build_wordcloud(df, config):
     stops = {word.strip() for word in config.get("stop_words", "").split(",") if word.strip()}; words = words[~words.isin(stops) & (words.str.len() > 1)]
     counts = words.value_counts().rename_axis("word").reset_index(name="value"); counts = counts[counts.value >= int(config.get("min_frequency", 1))].head(int(config.get("max_words", 30)))
     if counts.empty: return None
-    return alt.Chart(counts).mark_text().encode(text="word:N", size=alt.Size("value:Q", scale=alt.Scale(range=[int(config.get("font_min", 12)), int(config.get("font_max", 44))]), legend=None), color=alt.Color("value:Q", scale=alt.Scale(range=PALETTE), legend=None), tooltip=["word", "value"]).properties(title=config.get("title"), height=360)
+    styling = ensure_styling(config)
+    color_encoding = alt.value(styling["main_color"])
+    if styling.get("color_mode") != "Single color":
+        color_encoding = alt.Color("word:N", scale=alt.Scale(range=styling_palette(config, counts["word"].tolist())), legend=None)
+    chart = alt.Chart(counts).mark_text().encode(text="word:N", size=alt.Size("value:Q", scale=alt.Scale(range=[int(config.get("font_min", 12)), int(config.get("font_max", 44))]), legend=None), color=color_encoding, tooltip=["word", "value"]).properties(title=config.get("title"), height=360)
+    return visualization_properties(chart, config)
 
 
 def render_visualization(df, config):
@@ -257,7 +361,7 @@ def render_visualization(df, config):
 
 def add_chart_to_dashboard(dashboard, chart, chart_type, config=None, title=None):
     if config is None: return dashboard + [{"type": chart_type, "chart": chart}]
-    return dashboard + [{"id": uuid4().hex, "type": config.get("type", chart_type), "title": title or config.get("title", chart_type), "config": dict(config)}]
+    return dashboard + [{"id": uuid4().hex, "type": config.get("type", chart_type), "title": title or config.get("title", chart_type), "config": deepcopy(config)}]
 
 
 def delete_chart_from_dashboard(dashboard, index):
@@ -286,6 +390,71 @@ def build_chart(df, chart_type, selected_col, numeric_columns, categorical_colum
     return None
 
 
+def color_input(label, value, key):
+    columns = st.columns([1, 2])
+    picked = columns[0].color_picker(label, valid_color(value, DEFAULT_BACKGROUND), key=f"picker_{key}")
+    entered = columns[1].text_input("HEX", picked, key=f"hex_{key}")
+    return valid_color(entered, picked)
+
+
+def color_controls(df, field_types, config):
+    styling = ensure_styling(config)
+    widget_key = f"{st.session_state.get('editor_revision', 0)}"
+    with st.expander("Colors", expanded=False):
+        background = color_input("Background", styling["background_color"], f"{widget_key}_background")
+        styling["background_color"] = background
+        styling["main_color"] = color_input("Visualization / series color", styling["main_color"], f"{widget_key}_main")
+        relevant_type = config.get("type")
+        if relevant_type != "kpi_metric":
+            styling["color_mode"] = st.selectbox("Color mode", ["Single color", "Categorical palette", "Custom colors"], index=["Single color", "Categorical palette", "Custom colors"].index(styling.get("color_mode", "Categorical palette")), key=f"{widget_key}_color_mode")
+        if relevant_type in {"bar", "line", "area", "pie", "waffle", "treemap", "word_cloud", "map"}:
+            color_field = config.get("breakdown") or config.get("group_field") or config.get("text_field")
+            categories = []
+            if color_field in df.columns:
+                categories = df[color_field].dropna().astype(str).drop_duplicates().head(30).tolist()
+            if styling["color_mode"] == "Categorical palette":
+                st.caption("Default blue / aqua palette")
+                st.markdown(" ".join(f"<span style='display:inline-block;width:28px;height:14px;background:{color};border:1px solid #9bbdce'></span>" for color in styling["palette"]), unsafe_allow_html=True)
+            if styling["color_mode"] == "Custom colors" and categories:
+                st.caption("Category colors")
+                for index, category in enumerate(categories):
+                    styling["category_colors"][category] = color_input(category, styling["category_colors"].get(category, styling["palette"][index % len(styling["palette"])]), f"{widget_key}_category_{index}")
+            if relevant_type in {"pie", "waffle", "treemap"} and st.button("Apply palette", key="apply_palette"):
+                styling["category_colors"] = {category: styling["palette"][index % len(styling["palette"])] for index, category in enumerate(categories)}
+            if relevant_type in {"pie", "waffle", "treemap"} and st.button("Reset colors", key="reset_partition_colors"):
+                styling["category_colors"] = {}; styling["color_mode"] = "Categorical palette"
+        if relevant_type == "heat_map":
+            styling["heatmap_scale"] = st.selectbox("Color scale", ["Blue", "Aqua", "Blue → Aqua", "Light → Dark", "Custom gradient"], key="heatmap_scale")
+            if styling["heatmap_scale"] == "Custom gradient":
+                styling["heatmap_min"] = color_input("Minimum", styling["heatmap_min"], f"{widget_key}_heat_min")
+                styling["heatmap_mid"] = color_input("Midpoint", styling["heatmap_mid"], f"{widget_key}_heat_mid")
+                styling["heatmap_max"] = color_input("Maximum", styling["heatmap_max"], f"{widget_key}_heat_max")
+            styling["reverse_heatmap"] = st.checkbox("Reverse color scale", styling.get("reverse_heatmap", False), key=f"{widget_key}_reverse_heatmap")
+        if relevant_type == "map":
+            styling["marker_opacity"] = st.slider("Marker opacity", 0.1, 1.0, float(styling.get("marker_opacity", 0.7)), 0.05, key=f"{widget_key}_marker_opacity")
+            styling["marker_border"] = color_input("Marker border", styling["marker_border"], f"{widget_key}_marker_border")
+            styling["marker_size"] = st.slider("Marker size", 20, 400, int(styling.get("marker_size", 80)), 10, key=f"{widget_key}_marker_size")
+        if relevant_type == "kpi_metric":
+            styling["kpi_mode"] = st.selectbox("Color mode", ["Static", "Dynamic"], index=["Static", "Dynamic"].index(styling.get("kpi_mode", "Static")), key=f"{widget_key}_kpi_mode")
+            apply_targets = ["KPI number", "KPI background", "Accent", "Both"]
+            styling["kpi_apply_to"] = st.selectbox("Apply color to", apply_targets, index=apply_targets.index(styling.get("kpi_apply_to", "KPI number")), key=f"{widget_key}_kpi_apply_to")
+            if styling["kpi_mode"] == "Dynamic":
+                st.caption("Threshold ranges are inclusive")
+                thresholds = styling.get("kpi_thresholds") or [{"minimum": 0, "maximum": 50, "color": "#d65c5c"}, {"minimum": 50, "maximum": 80, "color": "#d6ad45"}, {"minimum": 80, "maximum": 1000000000, "color": "#2c9b7a"}]
+                styling["kpi_thresholds"] = thresholds
+                for index, threshold in enumerate(thresholds):
+                    columns = st.columns([1, 1, 2])
+                    threshold["minimum"] = columns[0].number_input(f"Min {index + 1}", value=float(threshold.get("minimum", 0)), key=f"{widget_key}_threshold_min_{index}")
+                    threshold["maximum"] = columns[1].number_input(f"Max {index + 1}", value=float(threshold.get("maximum", 100)), key=f"{widget_key}_threshold_max_{index}")
+                    threshold["color"] = columns[2].color_picker(f"Color {index + 1}", threshold.get("color", styling["main_color"]), key=f"{widget_key}_threshold_color_{index}")
+        reset_columns = st.columns(2)
+        if reset_columns[0].button("Reset colors", key="reset_all_colors"):
+            config["styling"] = default_styling(); st.rerun()
+        if reset_columns[1].button("Reset all styling", key="reset_all_styling"):
+            config["styling"] = default_styling(); st.rerun()
+    return config
+
+
 def editor_controls(df, field_types, config):
     types = field_types; all_fields = types["all"]; numeric = types["numeric"]; categorical = types["categorical"] + types["boolean"]; key = f"editor_{st.session_state.get('editor_revision', 0)}"
     label_for_type = {"kpi_metric": "KPI / Metric", "heat_map": "Heat Map", "word_cloud": "Word Cloud"}
@@ -306,10 +475,10 @@ def editor_controls(df, field_types, config):
     elif config["type"] == "heat_map":
         choose("X-axis", "x_field", all_fields); choose("Y-axis", "group_field", categorical or all_fields); choose("Cell metric", "y_field", compatible)
     elif config["type"] == "map":
-        choose("Latitude", "latitude", types["latitude"]); choose("Longitude", "longitude", types["longitude"]); choose("Metric", "y_field", numeric, None)
+        choose("Latitude", "latitude", types["latitude"]); choose("Longitude", "longitude", types["longitude"]); choose("Metric", "y_field", numeric, None); choose("Breakdown", "breakdown", [None] + categorical, None)
     elif config["type"] == "word_cloud":
         choose("Text field", "text_field", categorical or all_fields); config["max_words"] = st.number_input("Maximum words", 5, 200, int(config.get("max_words", 30)), key=f"words_{key}"); config["min_frequency"] = st.number_input("Minimum frequency", 1, 100, int(config.get("min_frequency", 1)), key=f"frequency_{key}"); config["stop_words"] = st.text_input("Stop words", config.get("stop_words", ""), key=f"stops_{key}")
-    return config
+    return color_controls(df, field_types, config)
 
 
 def filter_controls(df, field_types):
@@ -353,7 +522,11 @@ def main():
     with left:
         st.markdown("**Live preview**")
         preview = render_visualization(df, config)
-        if isinstance(preview, dict): st.markdown(f"<div style='background:#d9edf9;border:1px solid #9bbdce;border-radius:6px;padding:4rem 1rem;text-align:center'><div style='font-size:3rem;font-weight:800;color:#2789aa'>{preview['value']}</div><div style='font-size:1.2rem;color:#10222c'>{preview['title']}</div><div style='color:#5d7180'>{preview['subtitle']}</div></div>", unsafe_allow_html=True)
+        if isinstance(preview, dict):
+            number_color = preview["color"] if preview.get("apply_to") in {"KPI number", "Both"} else readable_text_color(preview["background"])
+            card_background = preview["color"] if preview.get("apply_to") in {"KPI background", "Both"} else preview["background"]
+            text_color = readable_text_color(card_background)
+            st.markdown(f"<div style='background:{card_background};border:1px solid #9bbdce;border-radius:6px;padding:4rem 1rem;text-align:center;color:{text_color}'><div style='font-size:3rem;font-weight:800;color:{number_color}'>{preview['value']}</div><div style='font-size:1.2rem;color:{text_color}'>{preview['title']}</div><div style='color:{text_color};opacity:.78'>{preview['subtitle']}</div></div>", unsafe_allow_html=True)
         elif preview is not None: st.altair_chart(preview, use_container_width=True)
         else: st.info("This visualization needs compatible fields or contains no matching data.")
     st.divider(); st.subheader("Dashboard")
@@ -367,13 +540,17 @@ def main():
                     st.caption(f"{panel.get('type', 'Chart').replace('_', ' ').title()} · P{index + 1:02d}"); st.markdown(f"**{panel.get('title', 'Visualization')}**")
                     if "config" in panel:
                         output = render_visualization(df, panel["config"])
-                        if isinstance(output, dict): st.metric(output["title"], output["value"], help=output["subtitle"])
+                        if isinstance(output, dict):
+                            number_color = output["color"] if output.get("apply_to") in {"KPI number", "Both"} else readable_text_color(output["background"])
+                            card_background = output["color"] if output.get("apply_to") in {"KPI background", "Both"} else output["background"]
+                            text_color = readable_text_color(card_background)
+                            st.markdown(f"<div style='background:{card_background};border:1px solid #9bbdce;border-radius:6px;padding:2rem 1rem;text-align:center;color:{text_color}'><div style='font-size:2rem;font-weight:800;color:{number_color}'>{output['value']}</div><div style='font-weight:700;color:{text_color}'>{output['title']}</div><div style='color:{text_color};opacity:.78'>{output['subtitle']}</div></div>", unsafe_allow_html=True)
                         elif output is not None: st.altair_chart(output, use_container_width=True)
                         else: st.warning("This panel cannot render with the current dataset.")
                     else: st.info("Legacy panel. Create a new visualization to edit it.")
                     actions = st.columns(3)
-                    if actions[0].button("Edit", key=f"edit_{index}") and "config" in panel: st.session_state.editor_config = dict(panel["config"]); st.session_state.editor_revision = st.session_state.get("editor_revision", 0) + 1; st.rerun()
-                    if actions[1].button("Duplicate", key=f"duplicate_{index}") and "config" in panel: st.session_state.dashboard_charts.insert(index + 1, {**panel, "id": uuid4().hex, "title": panel.get("title", "Visualization") + " copy", "config": dict(panel["config"])}); st.rerun()
+                    if actions[0].button("Edit", key=f"edit_{index}") and "config" in panel: st.session_state.editor_config = deepcopy(panel["config"]); st.session_state.editor_revision = st.session_state.get("editor_revision", 0) + 1; st.rerun()
+                    if actions[1].button("Duplicate", key=f"duplicate_{index}") and "config" in panel: st.session_state.dashboard_charts.insert(index + 1, {**panel, "id": uuid4().hex, "title": panel.get("title", "Visualization") + " copy", "config": deepcopy(panel["config"])}); st.rerun()
                     if actions[2].button("Delete", key=f"delete_{index}"): st.session_state.dashboard_charts = delete_chart_from_dashboard(st.session_state.dashboard_charts, index); st.rerun()
 
 
