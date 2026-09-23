@@ -2,3 +2,5 @@ streamlit
 pandas
 altair
 Pillow
+streamlit-elements
+vl-convert-python

@@ -1,11 +1,15 @@
 from io import BytesIO
 from copy import deepcopy
+import json
 from uuid import uuid4
 
 import altair as alt
 import pandas as pd
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
+from streamlit_elements import dashboard as elements_dashboard
+from streamlit_elements import elements, html, mui, sync
+import vl_convert as vlc
 
 
 st.set_page_config(page_title="Omer's Lens", page_icon="📊", layout="wide")
@@ -61,6 +65,9 @@ DEFAULT_STYLING = {
 VIS_TYPES = ["Bar", "Line", "Area", "KPI / Metric", "Pie", "Heat Map", "Waffle", "Map", "Treemap", "Word Cloud"]
 AGGREGATIONS = ["Count", "Unique count", "Sum", "Average", "Min", "Max", "Median"]
 DATE_GROUPS = ["None", "Minute", "Hour", "Day", "Week", "Month", "Year"]
+DASHBOARD_COLUMNS = 12
+DEFAULT_PANEL_WIDTH = 6
+DEFAULT_PANEL_HEIGHT = 4
 
 
 def default_styling():
@@ -97,7 +104,7 @@ def readable_text_color(background):
 def styling_palette(config, categories=None):
     styling = ensure_styling(config)
     categories = [str(category) for category in (categories or [])]
-    if styling.get("color_mode") == "Single color":
+    if styling.get("color_mode") in {"Single color", "Static"}:
         return [styling["main_color"] for _ in categories] or [styling["main_color"]]
     palette = [valid_color(color, PALETTE[index % len(PALETTE)]) for index, color in enumerate(styling["palette"])] or PALETTE
     if styling.get("color_mode") == "Custom colors":
@@ -361,7 +368,44 @@ def render_visualization(df, config):
 
 def add_chart_to_dashboard(dashboard, chart, chart_type, config=None, title=None):
     if config is None: return dashboard + [{"type": chart_type, "chart": chart}]
-    return dashboard + [{"id": uuid4().hex, "type": config.get("type", chart_type), "title": title or config.get("title", chart_type), "config": deepcopy(config)}]
+    panel_id = uuid4().hex
+    return dashboard + [{"id": panel_id, "type": config.get("type", chart_type), "title": title or config.get("title", chart_type), "config": deepcopy(config), "layout": {"x": 0, "y": next_panel_y(dashboard), "width": DEFAULT_PANEL_WIDTH, "height": DEFAULT_PANEL_HEIGHT}}]
+
+
+def next_panel_y(dashboard):
+    if not dashboard:
+        return 0
+    return max(int(panel.get("layout", {}).get("y", 0)) + int(panel.get("layout", {}).get("height", DEFAULT_PANEL_HEIGHT)) for panel in dashboard)
+
+
+def panel_layout(panel, index=0):
+    layout = panel.setdefault("layout", {})
+    if not layout:
+        layout.update({"x": (index % 2) * DEFAULT_PANEL_WIDTH, "y": (index // 2) * DEFAULT_PANEL_HEIGHT, "width": DEFAULT_PANEL_WIDTH, "height": DEFAULT_PANEL_HEIGHT})
+    layout["x"] = max(0, min(DASHBOARD_COLUMNS - 1, int(layout.get("x", 0))))
+    layout["y"] = max(0, int(layout.get("y", 0)))
+    layout["width"] = max(2, min(DASHBOARD_COLUMNS, int(layout.get("width", DEFAULT_PANEL_WIDTH))))
+    layout["height"] = max(3, int(layout.get("height", DEFAULT_PANEL_HEIGHT)))
+    if layout["x"] + layout["width"] > DASHBOARD_COLUMNS:
+        layout["x"] = DASHBOARD_COLUMNS - layout["width"]
+    return layout
+
+
+def reset_dashboard_layout(dashboard):
+    for index, panel in enumerate(dashboard):
+        layout = panel_layout(panel, index)
+        layout.update({"x": (index % 2) * DEFAULT_PANEL_WIDTH, "y": (index // 2) * DEFAULT_PANEL_HEIGHT, "width": DEFAULT_PANEL_WIDTH, "height": DEFAULT_PANEL_HEIGHT})
+    return dashboard
+
+
+def update_dashboard_layout(dashboard, layout_items):
+    by_id = {str(item.get("i")): item for item in layout_items or []}
+    for index, panel in enumerate(dashboard):
+        item = by_id.get(str(panel.get("id")))
+        if item:
+            panel["layout"] = {"x": item.get("x", 0), "y": item.get("y", 0), "width": item.get("w", DEFAULT_PANEL_WIDTH), "height": item.get("h", DEFAULT_PANEL_HEIGHT)}
+        panel_layout(panel, index)
+    return dashboard
 
 
 def delete_chart_from_dashboard(dashboard, index):
@@ -369,13 +413,44 @@ def delete_chart_from_dashboard(dashboard, index):
     return dashboard
 
 
-def build_dashboard_image(dashboard):
-    image = Image.new("RGB", (1024, 700 + max(0, len(dashboard) - 1) * 120), color=(239, 247, 252)); draw = ImageDraw.Draw(image)
-    try: font_header = ImageFont.truetype("arial.ttf", 36); font_body = ImageFont.truetype("arial.ttf", 22); font_small = ImageFont.truetype("arial.ttf", 16)
-    except Exception: font_header = font_body = font_small = ImageFont.load_default()
-    draw.rectangle((0, 0, image.width, image.height), fill=(239, 247, 252)); draw.rectangle((40, 30, image.width - 40, 110), fill=(30, 76, 110)); draw.text((70, 50), "Omer's Dashboard", fill=(250, 251, 252), font=font_header)
-    for idx, item in enumerate(dashboard):
-        y = 140 + idx * 120; draw.rounded_rectangle((60, y, 964, y + 90), radius=14, fill=(255, 255, 255)); draw.text((104, y + 15), f"{idx + 1}. {item.get('title', item.get('type', 'Chart'))}", fill=(30, 76, 110), font=font_body); draw.text((104, y + 50), str(item.get("type", "Visualization")), fill=(84, 108, 126), font=font_small)
+def chart_png(chart):
+    if chart is None:
+        return None
+    try:
+        return vlc.vegalite_to_png(json.dumps(chart.to_dict()))
+    except Exception:
+        return None
+
+
+def build_dashboard_image(dashboard, df=None):
+    """Compose the configured panels, at their saved grid positions, into a real PNG."""
+    scale = 140
+    margin = 28
+    row_height = 145
+    max_row = max((panel_layout(panel).get("y", 0) + panel_layout(panel).get("height", DEFAULT_PANEL_HEIGHT) for panel in dashboard), default=DEFAULT_PANEL_HEIGHT)
+    image = Image.new("RGB", (DASHBOARD_COLUMNS * scale + margin * 2, max_row * row_height + 125), color=(234, 249, 255))
+    draw = ImageDraw.Draw(image)
+    try:
+        font_header = ImageFont.truetype("arial.ttf", 30); font_title = ImageFont.truetype("arial.ttf", 16); font_small = ImageFont.truetype("arial.ttf", 12)
+    except Exception:
+        font_header = font_title = font_small = ImageFont.load_default()
+    draw.text((margin, 28), "Omer's Dashboard", fill=(16, 34, 44), font=font_header)
+    for index, panel in enumerate(dashboard):
+        layout = panel_layout(panel, index)
+        x0 = margin + layout["x"] * scale; y0 = 90 + layout["y"] * row_height
+        width = max(220, layout["width"] * scale - 12); height = max(170, layout["height"] * row_height - 12)
+        config = panel.get("config", {}); styling = ensure_styling(config)
+        draw.rounded_rectangle((x0, y0, x0 + width, y0 + height), radius=6, fill=tuple(int(styling["background_color"][i:i + 2], 16) for i in (1, 3, 5)), outline=(45, 59, 71), width=2)
+        draw.text((x0 + 12, y0 + 10), panel.get("title", panel.get("type", "Visualization")), fill=readable_text_color(styling["background_color"]), font=font_title)
+        output = render_visualization(df, config) if df is not None and config else None
+        if isinstance(output, dict):
+            color = output.get("color", styling["main_color"]); draw.text((x0 + 24, y0 + height // 2 - 20), output["value"], fill=tuple(int(color[i:i + 2], 16) for i in (1, 3, 5)), font=font_header); draw.text((x0 + 24, y0 + height // 2 + 22), output.get("subtitle", ""), fill=readable_text_color(styling["background_color"]), font=font_small)
+        else:
+            png = chart_png(output)
+            if png:
+                chart_image = Image.open(BytesIO(png)).convert("RGB"); chart_image.thumbnail((width - 24, height - 48)); image.paste(chart_image, (x0 + 12, y0 + 36))
+            else:
+                draw.text((x0 + 16, y0 + height // 2), "Visualization unavailable", fill=readable_text_color(styling["background_color"]), font=font_small)
     buffer = BytesIO(); image.save(buffer, format="PNG"); return buffer.getvalue()
 
 
@@ -406,7 +481,9 @@ def color_controls(df, field_types, config):
         styling["main_color"] = color_input("Visualization / series color", styling["main_color"], f"{widget_key}_main")
         relevant_type = config.get("type")
         if relevant_type != "kpi_metric":
-            styling["color_mode"] = st.selectbox("Color mode", ["Single color", "Categorical palette", "Custom colors"], index=["Single color", "Categorical palette", "Custom colors"].index(styling.get("color_mode", "Categorical palette")), key=f"{widget_key}_color_mode")
+            color_modes = ["Static", "Categorical palette", "Custom colors"]
+            saved_mode = "Static" if styling.get("color_mode") == "Single color" else styling.get("color_mode", "Categorical palette")
+            styling["color_mode"] = st.selectbox("Color mode", color_modes, index=color_modes.index(saved_mode), key=f"{widget_key}_color_mode")
         if relevant_type in {"bar", "line", "area", "pie", "waffle", "treemap", "word_cloud", "map"}:
             color_field = config.get("breakdown") or config.get("group_field") or config.get("text_field")
             categories = []
@@ -494,6 +571,34 @@ def filter_controls(df, field_types):
     return st.session_state.draft_filters
 
 
+def visualization_html(df, panel):
+    output = render_visualization(df, panel.get("config", {}))
+    if isinstance(output, dict):
+        background = output.get("background", DEFAULT_BACKGROUND); color = output.get("color", "#54b8d5")
+        return f"<div style='height:100%;padding:30px 12px;text-align:center;background:{background};color:{readable_text_color(background)}'><div style='font-size:42px;font-weight:800;color:{color}'>{output['value']}</div><div>{output['title']}</div><small>{output.get('subtitle', '')}</small></div>"
+    if output is None:
+        return "<div style='padding:40px;text-align:center;color:#5d7180'>Visualization unavailable</div>"
+    return output.to_html(embed_options={"renderer": "svg"})
+
+
+def render_dashboard_workspace(df, panels):
+    for index, panel in enumerate(panels):
+        panel_layout(panel, index)
+    layout = [
+        elements_dashboard.Item(str(panel["id"]), panel["layout"]["x"], panel["layout"]["y"], panel["layout"]["width"], panel["layout"]["height"])
+        for panel in panels
+    ]
+    with elements("dashboard_workspace"):
+        with elements_dashboard.Grid(layout, cols=DASHBOARD_COLUMNS, rowHeight=120, width="100%", draggableHandle=".panel-drag-handle", onLayoutChange=sync("dashboard_layout")):
+            for panel in panels:
+                styling = ensure_styling(panel.get("config", {}))
+                with html.div(key=str(panel["id"]), style={"background": styling["background_color"], "border": "1px solid #2d3b47", "borderRadius": "6px", "overflow": "hidden", "height": "100%"}):
+                    html.div(panel.get("title", "Visualization"), className="panel-drag-handle", style={"height": "30px", "padding": "7px 10px", "fontWeight": "700", "color": readable_text_color(styling["background_color"])})
+                    html.iframe(srcDoc=visualization_html(df, panel), style={"width": "100%", "height": "calc(100% - 30px)", "border": "0"})
+    if st.session_state.get("dashboard_layout"):
+        update_dashboard_layout(panels, st.session_state.pop("dashboard_layout"))
+
+
 def main():
     st.markdown('<div class="lens-kicker">CSV analytics workspace</div>', unsafe_allow_html=True)
     st.title("Omer's Lens")
@@ -530,28 +635,42 @@ def main():
         elif preview is not None: st.altair_chart(preview, use_container_width=True)
         else: st.info("This visualization needs compatible fields or contains no matching data.")
     st.divider(); st.subheader("Dashboard")
-    if not st.session_state.dashboard_charts: st.caption("Your saved visualizations will appear here.")
+    panels = st.session_state.dashboard_charts
+    for index, panel in enumerate(panels):
+        panel_layout(panel, index)
+    toolbar = st.columns([4, 1, 1, 1, 2])
+    toolbar[0].markdown(f"**Analytics workspace** · {len(panels)} panels")
+    if toolbar[1].button("+ Add visualization", key="dashboard_add_visualization"):
+        st.session_state.editor_config = default_config("Bar", field_types); st.session_state.editor_revision = st.session_state.get("editor_revision", 0) + 1; st.rerun()
+    if toolbar[2].button("Reset layout", key="dashboard_reset_layout"):
+        reset_dashboard_layout(panels); st.rerun()
+    if toolbar[3].button("Download PNG", key="dashboard_download_png"):
+        st.session_state.dashboard_export_ready = True
+    if toolbar[4].button("Clear dashboard", key="dashboard_clear"):
+        st.session_state.dashboard_charts = []; st.rerun()
+    if panels:
+        render_dashboard_workspace(df, panels)
+        st.caption("Drag panel headers to move panels. Drag panel edges or corners to resize.")
+        for index, panel in enumerate(panels):
+            actions = st.columns([3, 1, 1, 1, 1, 1])
+            actions[0].caption(f"P{index + 1:02d} · {panel.get('title', 'Visualization')} · {panel['layout']['width']}×{panel['layout']['height']}")
+            if actions[1].button("Edit", key=f"edit_{index}") and "config" in panel:
+                st.session_state.editor_config = deepcopy(panel["config"]); st.session_state.editor_revision = st.session_state.get("editor_revision", 0) + 1; st.rerun()
+            if actions[2].button("Duplicate", key=f"duplicate_{index}") and "config" in panel:
+                copy_panel = {**panel, "id": uuid4().hex, "title": panel.get("title", "Visualization") + " copy", "config": deepcopy(panel["config"]), "layout": deepcopy(panel["layout"])}
+                copy_panel["layout"]["x"] = min(DASHBOARD_COLUMNS - copy_panel["layout"]["width"], copy_panel["layout"]["x"] + 1); copy_panel["layout"]["y"] += 1
+                st.session_state.dashboard_charts.insert(index + 1, copy_panel); st.rerun()
+            if actions[3].button("Delete", key=f"delete_{index}"):
+                st.session_state.dashboard_charts = delete_chart_from_dashboard(st.session_state.dashboard_charts, index); st.rerun()
+            if actions[4].button("Reset size", key=f"reset_size_{index}"):
+                panel["layout"].update({"width": DEFAULT_PANEL_WIDTH, "height": DEFAULT_PANEL_HEIGHT}); st.rerun()
+            if actions[5].button("Reset position", key=f"reset_position_{index}"):
+                panel["layout"].update({"x": (index % 2) * DEFAULT_PANEL_WIDTH, "y": (index // 2) * DEFAULT_PANEL_HEIGHT}); st.rerun()
+        if st.session_state.get("dashboard_export_ready"):
+            st.download_button("Download Dashboard as PNG", build_dashboard_image(panels, df), "omer-dashboard.png", "image/png", key="dashboard_export_download")
+            st.session_state.dashboard_export_ready = False
     else:
-        top = st.columns([4, 1, 2]); top[0].markdown("**Saved panels**"); top[1].metric("Panels", len(st.session_state.dashboard_charts)); top[2].download_button("Download dashboard", build_dashboard_image(st.session_state.dashboard_charts), "dashboard.png", "image/png")
-        panel_columns = st.columns(2)
-        for index, panel in enumerate(st.session_state.dashboard_charts):
-            with panel_columns[index % 2]:
-                with st.container(border=True):
-                    st.caption(f"{panel.get('type', 'Chart').replace('_', ' ').title()} · P{index + 1:02d}"); st.markdown(f"**{panel.get('title', 'Visualization')}**")
-                    if "config" in panel:
-                        output = render_visualization(df, panel["config"])
-                        if isinstance(output, dict):
-                            number_color = output["color"] if output.get("apply_to") in {"KPI number", "Both"} else readable_text_color(output["background"])
-                            card_background = output["color"] if output.get("apply_to") in {"KPI background", "Both"} else output["background"]
-                            text_color = readable_text_color(card_background)
-                            st.markdown(f"<div style='background:{card_background};border:1px solid #9bbdce;border-radius:6px;padding:2rem 1rem;text-align:center;color:{text_color}'><div style='font-size:2rem;font-weight:800;color:{number_color}'>{output['value']}</div><div style='font-weight:700;color:{text_color}'>{output['title']}</div><div style='color:{text_color};opacity:.78'>{output['subtitle']}</div></div>", unsafe_allow_html=True)
-                        elif output is not None: st.altair_chart(output, use_container_width=True)
-                        else: st.warning("This panel cannot render with the current dataset.")
-                    else: st.info("Legacy panel. Create a new visualization to edit it.")
-                    actions = st.columns(3)
-                    if actions[0].button("Edit", key=f"edit_{index}") and "config" in panel: st.session_state.editor_config = deepcopy(panel["config"]); st.session_state.editor_revision = st.session_state.get("editor_revision", 0) + 1; st.rerun()
-                    if actions[1].button("Duplicate", key=f"duplicate_{index}") and "config" in panel: st.session_state.dashboard_charts.insert(index + 1, {**panel, "id": uuid4().hex, "title": panel.get("title", "Visualization") + " copy", "config": deepcopy(panel["config"])}); st.rerun()
-                    if actions[2].button("Delete", key=f"delete_{index}"): st.session_state.dashboard_charts = delete_chart_from_dashboard(st.session_state.dashboard_charts, index); st.rerun()
+        st.info("Add a visualization to start arranging your dashboard workspace.")
 
 
 if __name__ == "__main__":
