@@ -15,25 +15,26 @@ st.markdown(
     """
     <style>
     :root {
-        --text: #172a3a;
-        --text-soft: #415a70;
-        --muted: #72879c;
-        --line: #ccdce8;
-        --glass: rgba(252, 254, 255, 0.72);
-        --panel: #ffffff;
-        --panel-soft: #eef8fd;
-        --blue: #75b8dd;
-        --blue-deep: #184e75;
-        --blue-dark: #0d3047;
-        --aqua: #96dce6;
-        --shadow: rgba(18, 49, 80, 0.16);
+        --text: #e8edf2;
+        --text-soft: #aab7c4;
+        --muted: #71808e;
+        --line: #2d3b47;
+        --glass: rgba(25, 35, 43, 0.92);
+        --panel: #202c35;
+        --panel-soft: #263640;
+        --blue: #54b8d5;
+        --blue-deep: #2789aa;
+        --blue-dark: #f0f4f7;
+        --aqua: #80d8d1;
+        --shadow: rgba(0, 0, 0, 0.28);
     }
 
     [data-testid="stAppViewContainer"] {
         background:
-            radial-gradient(circle at 76% 6%, rgba(183, 226, 250, 0.95), transparent 15%),
-            radial-gradient(circle at 16% 92%, rgba(155, 220, 232, 0.60), transparent 14%),
-            linear-gradient(135deg, #eaf9ff 0%, #d9edf9 52%, #c8dde8 100%);
+            linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px),
+            #111a21;
+        background-size: 28px 28px;
         color: var(--text);
     }
 
@@ -47,16 +48,16 @@ st.markdown(
     }
 
     .block-container {
-        padding-top: 2rem;
+        padding-top: 1.35rem;
         padding-bottom: 3rem;
         max-width: min(1440px, calc(100vw - 3rem));
     }
 
     h1 {
-        font-size: clamp(2.8rem, 4vw, 4rem) !important;
+        font-size: clamp(2.2rem, 3vw, 3.2rem) !important;
         font-weight: 700 !important;
         color: var(--blue-dark) !important;
-        letter-spacing: -0.045em !important;
+        letter-spacing: 0 !important;
         margin-bottom: 0.4rem !important;
     }
 
@@ -70,19 +71,25 @@ st.markdown(
         color: var(--text-soft);
     }
 
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        box-shadow: 0 8px 24px var(--shadow);
+    }
+
     div[data-testid="stFileUploader"] {
-        border-radius: 18px;
+        border-radius: 6px;
         border: 1px solid var(--line);
         background: var(--glass);
-        box-shadow: 0 16px 44px var(--shadow);
-        backdrop-filter: blur(10px);
+        box-shadow: 0 8px 24px var(--shadow);
     }
 
     div[data-testid="stDataFrame"] {
-        border-radius: 16px;
+        border-radius: 6px;
         border: 1px solid var(--line);
         background: var(--panel);
-        box-shadow: 0 12px 30px var(--shadow);
+        box-shadow: 0 8px 24px var(--shadow);
         overflow: hidden;
     }
 
@@ -92,30 +99,30 @@ st.markdown(
     .stTextInput > div > div {
         border-radius: 14px;
         border: 1px solid var(--line);
-        background: var(--panel);
+        background: #18232b;
         box-shadow: 0 2px 8px var(--shadow);
     }
 
     div.stButton > button {
-        height: 44px;
+        height: 38px;
         border: 1px solid var(--blue);
-        border-radius: 12px;
+        border-radius: 4px;
         background: var(--blue);
-        color: var(--blue-dark);
+        color: #07151d;
         font-weight: 900;
         font-size: 0.88rem;
         letter-spacing: 0.03em;
         padding: 0.7rem 1.45rem;
-        box-shadow: 0 10px 24px var(--shadow);
+        box-shadow: 0 5px 14px var(--shadow);
         transition: transform 220ms ease, box-shadow 220ms ease, filter 220ms ease, background 220ms ease;
         font-family: "Inter", "Segoe UI", Arial, sans-serif;
     }
 
     div.stButton > button:hover {
         background: var(--blue-deep);
-        color: #f8fdff;
-        transform: translateY(-2px);
-        box-shadow: 0 14px 30px var(--shadow);
+        color: #ffffff;
+        transform: translateY(-1px);
+        box-shadow: 0 8px 18px var(--shadow);
         filter: saturate(1.12);
     }
 
@@ -130,7 +137,7 @@ st.markdown(
     }
 
     section[data-testid="stSidebar"] {
-        background: rgba(255,255,255,0.68);
+        background: #17232b;
         border-right: 1px solid var(--line);
         box-shadow: 0 12px 36px var(--shadow);
     }
@@ -140,9 +147,32 @@ st.markdown(
     }
 
     .stCaption {
-        color: var(--text-soft);
+        color: var(--aqua);
         font-weight: 700;
-        letter-spacing: 0.04em;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+
+    div[data-testid="stDownloadButton"] > button {
+        height: 38px;
+        border-radius: 4px;
+        border: 1px solid #496171;
+        background: #263640;
+        color: var(--text);
+        font-weight: 700;
+    }
+
+    div[data-testid="stDownloadButton"] > button:hover {
+        border-color: var(--blue);
+        color: #ffffff;
+        background: #304755;
+    }
+
+    [data-testid="stMetric"] {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 0.7rem 0.9rem;
     }
 
     .css-1v0mbdj, .css-1n7v2u7 {
@@ -154,12 +184,10 @@ st.markdown(
 )
 
 
-def add_chart_to_dashboard(dashboard, chart, chart_type, df=None):
+def add_chart_to_dashboard(dashboard, chart, chart_type):
     dashboard.append({
         "type": chart_type,
         "chart": chart,
-        "df": df,
-        "view": "chart",
     })
     return dashboard
 
@@ -353,7 +381,6 @@ if uploaded_file is not None:
                     st.session_state.dashboard_charts,
                     chart,
                     chart_type,
-                    df,
                 )
                 st.success("Visualization added to the dashboard.")
 
@@ -362,23 +389,40 @@ if uploaded_file is not None:
 
 if st.session_state.dashboard_charts:
     st.subheader("Dashboard")
-    chart_columns = st.columns(2)
 
-    for idx, chart_item in enumerate(st.session_state.dashboard_charts):
-        with chart_columns[idx % 2]:
-            st.caption(f"{chart_item['type']}")
-            st.altair_chart(chart_item["chart"], use_container_width=True)
+    dashboard_header_col, dashboard_stats_col, dashboard_actions_col = st.columns([5, 2, 3])
+    with dashboard_header_col:
+        st.markdown("**Analytics workspace**")
+        st.caption("Saved visualizations")
 
-    download_col, delete_col = st.columns([4, 1])
-    with download_col:
+    with dashboard_stats_col:
+        st.metric("Panels", len(st.session_state.dashboard_charts))
+
+    with dashboard_actions_col:
         st.download_button(
-            label="Download Dashboard as Picture",
+            label="Download dashboard",
             data=build_dashboard_image(st.session_state.dashboard_charts),
             file_name="dashboard.png",
             mime="image/png",
         )
 
+    chart_columns = st.columns(2)
+
+    for idx, chart_item in enumerate(st.session_state.dashboard_charts):
+        with chart_columns[idx % 2]:
+            with st.container(border=True):
+                panel_title_col, panel_meta_col = st.columns([5, 1])
+                with panel_title_col:
+                    st.caption(f"{chart_item['type']}")
+                with panel_meta_col:
+                    st.caption(f"P{idx + 1:02d}")
+                st.altair_chart(chart_item["chart"], use_container_width=True)
+
+    download_col, delete_col = st.columns([4, 1])
     with delete_col:
         if st.button("×", key="delete_dashboard_visualization", help="Delete last visualization"):
             if st.session_state.dashboard_charts:
-                st.session_state.dashboard_charts = delete_chart_from_dashboard(st.session_state.dashboard_charts, len(st.session_state.dashboard_charts) - 1)
+                st.session_state.dashboard_charts = delete_chart_from_dashboard(
+                    st.session_state.dashboard_charts,
+                    len(st.session_state.dashboard_charts) - 1,
+                )
