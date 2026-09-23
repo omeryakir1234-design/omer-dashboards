@@ -115,6 +115,12 @@ st.markdown(
     }
 
     .stSelectbox [data-baseweb="select"] > div,
+    .stSelectbox [data-baseweb="select"] > div > div {
+        background: #d9edf9 !important;
+        color: #000000 !important;
+    }
+
+    .stSelectbox [data-baseweb="select"] > div,
     [role="listbox"],
     [role="listbox"] [role="option"] {
         background: #d9edf9 !important;
