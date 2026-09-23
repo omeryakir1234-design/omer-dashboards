@@ -211,21 +211,21 @@ def dashboard_chart_theme():
                 "stroke": "#9bbdce",
             },
             "axis": {
-                "labelColor": "#000000",
-                "titleColor": "#000000",
-                "domainColor": "#000000",
+                "labelColor": "#100B0B",
+                "titleColor": "#100B0B",
+                "domainColor": "#100B0B",
                 "gridColor": "#a9c9d8",
-                "tickColor": "#000000",
+                "tickColor": "#100B0B",
             },
             "legend": {
-                "labelColor": "#000000",
-                "titleColor": "#000000",
+                "labelColor": "#100B0B",
+                "titleColor": "#100B0B",
             },
             "title": {
-                "color": "#000000",
+                "color": "#100B0B",
             },
             "mark": {
-                "color": "#000000",
+                "color": "#100B0B",
             },
         }
     }
