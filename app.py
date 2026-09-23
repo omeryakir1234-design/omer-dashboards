@@ -194,6 +194,39 @@ st.markdown(
 )
 
 
+def dashboard_chart_theme():
+    return {
+        "config": {
+            "background": "#d9edf9",
+            "view": {
+                "fill": "#d9edf9",
+                "stroke": "#9bbdce",
+            },
+            "axis": {
+                "labelColor": "#000000",
+                "titleColor": "#000000",
+                "domainColor": "#000000",
+                "gridColor": "#a9c9d8",
+                "tickColor": "#000000",
+            },
+            "legend": {
+                "labelColor": "#000000",
+                "titleColor": "#000000",
+            },
+            "title": {
+                "color": "#000000",
+            },
+            "mark": {
+                "color": "#000000",
+            },
+        }
+    }
+
+
+alt.themes.register("dashboard_light_blue", dashboard_chart_theme)
+alt.themes.enable("dashboard_light_blue")
+
+
 def add_chart_to_dashboard(dashboard, chart, chart_type):
     dashboard.append({
         "type": chart_type,
