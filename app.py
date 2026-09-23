@@ -102,6 +102,17 @@ st.markdown(
         box-shadow: 0 2px 8px var(--shadow);
     }
 
+    .stSelectbox label,
+    .stSelectbox [data-baseweb="select"] div,
+    .stSelectbox [data-baseweb="select"] span,
+    [role="listbox"] [role="option"] {
+        color: #ffffff !important;
+    }
+
+    .stSelectbox [data-baseweb="select"] {
+        color: #ffffff !important;
+    }
+
     div.stButton > button {
         height: 38px;
         border: 1px solid var(--blue);
