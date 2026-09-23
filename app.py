@@ -55,7 +55,7 @@ st.markdown(
     h1 {
         font-size: clamp(2.2rem, 3vw, 3.2rem) !important;
         font-weight: 700 !important;
-        color: var(--blue-dark) !important;
+        color: #000000 !important;
         letter-spacing: 0 !important;
         margin-bottom: 0.4rem !important;
     }
