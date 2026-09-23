@@ -28,14 +28,22 @@ st.markdown(
     div[data-testid="stVerticalBlockBorderWrapper"] { background:var(--panel); border:1px solid var(--line); border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,.2); }
     div[data-testid="stFileUploader"],div[data-testid="stDataFrame"] { border:1px solid var(--line); border-radius:6px; background:rgba(25,35,43,.92); }
     .stSelectbox > div > div,.stMultiSelect > div > div,.stNumberInput > div > div,.stTextInput > div > div { border-radius:6px; border:1px solid var(--line); background:#18232b; }
-    .stSelectbox label,.stMultiSelect label,.stNumberInput label,.stTextInput label { color:#d8e7ee !important; }
-    [data-baseweb="select"] { background:#d9edf9 !important; color:#10222c !important; }
-    div.stButton > button { height:38px; border:1px solid var(--blue); border-radius:4px; background:var(--blue); color:#07151d; font-weight:800; }
-    div.stButton > button:hover { background:var(--deep); color:white; }
+    .stSelectbox label,.stMultiSelect label,.stNumberInput label,.stTextInput label,.stSlider label { color:#d8e7ee !important; }
+    [data-baseweb="select"], [data-baseweb="select"] > div, [data-baseweb="select"] [data-baseweb="input"] { background:#18232b !important; color:#ffffff !important; }
+    [data-baseweb="select"] span, [data-baseweb="select"] input, [data-baseweb="select"] svg { color:#ffffff !important; fill:#ffffff !important; }
+    [role="listbox"], [role="listbox"] [role="option"] { background:#18232b !important; color:#ffffff !important; }
+    [role="listbox"] [role="option"]:hover, [role="listbox"] [aria-selected="true"] { background:#2789aa !important; color:#ffffff !important; }
+    .stTextInput input,.stNumberInput input { background:#18232b !important; color:#ffffff !important; caret-color:#80d8d1; }
+    .stTextInput input::placeholder,.stNumberInput input::placeholder { color:#aab7c4 !important; }
+    div.stButton > button { height:38px; border:1px solid var(--blue); border-radius:4px; background:var(--blue); color:#ffffff !important; font-weight:800; }
+    div.stButton > button:hover { background:var(--deep); color:#ffffff !important; }
+    div.stButton > button p, div.stButton > button span { color:#ffffff !important; }
     section[data-testid="stSidebar"] { background:#17232b; border-right:1px solid var(--line); }
     [data-testid="stMetric"] { background:var(--panel); border:1px solid var(--line); border-radius:6px; }
     .lens-kicker { color:#2789aa; font-size:.76rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
     .empty-canvas { min-height:360px; display:flex; align-items:center; justify-content:center; border:1px dashed #7caabc; border-radius:6px; color:#58717d; background:rgba(234,249,255,.35); }
+    .builder-section { margin:1rem 0 .55rem; padding-bottom:.35rem; border-bottom:1px solid #496171; color:#80d8d1; font-size:.78rem; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+    .preview-shell { padding:.25rem .5rem .8rem; background:rgba(234,249,255,.35); border:1px solid #9bbdce; border-radius:6px; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -536,25 +544,66 @@ def editor_controls(df, field_types, config):
     types = field_types; all_fields = types["all"]; numeric = types["numeric"]; categorical = types["categorical"] + types["boolean"]; key = f"editor_{st.session_state.get('editor_revision', 0)}"
     label_for_type = {"kpi_metric": "KPI / Metric", "heat_map": "Heat Map", "word_cloud": "Word Cloud"}
     current_label = label_for_type.get(config["type"], config["type"].title())
-    chart_label = st.selectbox("Visualization", VIS_TYPES, index=VIS_TYPES.index(current_label) if current_label in VIS_TYPES else 0, key=f"type_{key}")
+    st.markdown('<div class="builder-section">General</div>', unsafe_allow_html=True)
+    general = st.columns(3, gap="medium")
+    with general[0]:
+        chart_label = st.selectbox("Visualization", VIS_TYPES, index=VIS_TYPES.index(current_label) if current_label in VIS_TYPES else 0, key=f"type_{key}")
+    with general[1]:
+        config["title"] = st.text_input("Title", config.get("title", chart_label if "chart_label" in locals() else current_label), key=f"title_{key}")
+    with general[2]:
+        config["aggregation"] = st.selectbox("Aggregation", AGGREGATIONS, index=AGGREGATIONS.index(config.get("aggregation", "Count")) if config.get("aggregation") in AGGREGATIONS else 0, key=f"agg_{key}")
     config["type"] = chart_label.lower().replace(" / ", "_").replace(" ", "_")
-    config["title"] = st.text_input("Title", config.get("title", chart_label), key=f"title_{key}")
-    config["aggregation"] = st.selectbox("Aggregation", AGGREGATIONS, index=AGGREGATIONS.index(config.get("aggregation", "Count")) if config.get("aggregation") in AGGREGATIONS else 0, key=f"agg_{key}")
     compatible = compatible_fields(types, config["aggregation"]) or all_fields
     def choose(label, name, options, fallback=None):
         options = list(options); current = config.get(name) if config.get(name) in options else (fallback or (options[0] if options else None)); config[name] = st.selectbox(label, options or ["No compatible field"], index=options.index(current) if current in options else 0, key=f"{name}_{key}") if options else None
+    st.markdown('<div class="builder-section">Axes &amp; Dimensions</div>', unsafe_allow_html=True)
     if config["type"] in {"bar", "line", "area"}:
-        choose("X-axis / Dimension", "x_field", all_fields); choose("Metric field", "y_field", compatible); choose("Breakdown", "breakdown", [None] + categorical, None); config["date_group"] = st.selectbox("Datetime grouping", DATE_GROUPS, index=DATE_GROUPS.index(config.get("date_group", "None")), key=f"date_{key}"); config["orientation"] = st.selectbox("Orientation", ["Vertical", "Horizontal"], key=f"orientation_{key}") if config["type"] == "bar" else "Vertical"; config["points"] = st.checkbox("Data points", value=config.get("points", True), key=f"points_{key}"); config["stacked"] = st.checkbox("Stacked", value=config.get("stacked", False), key=f"stacked_{key}") if config["type"] == "area" else False
+        axes = st.columns(3, gap="medium")
+        with axes[0]: choose("X-axis / Dimension", "x_field", all_fields)
+        with axes[1]: choose("Metric field", "y_field", compatible)
+        with axes[2]: choose("Breakdown", "breakdown", [None] + categorical, None)
+        details = st.columns(3, gap="medium")
+        with details[0]: config["date_group"] = st.selectbox("Datetime grouping", DATE_GROUPS, index=DATE_GROUPS.index(config.get("date_group", "None")), key=f"date_{key}")
+        with details[1]: config["orientation"] = st.selectbox("Orientation", ["Vertical", "Horizontal"], key=f"orientation_{key}") if config["type"] == "bar" else "Vertical"
+        with details[2]:
+            config["labels"] = st.checkbox("Data labels", value=config.get("labels", False), key=f"labels_{key}")
+            config["points"] = st.checkbox("Data points", value=config.get("points", True), key=f"points_{key}")
+            if config["type"] == "area": config["stacked"] = st.checkbox("Stacked", value=config.get("stacked", False), key=f"stacked_{key}")
     elif config["type"] == "kpi_metric":
-        choose("Metric field", "y_field", compatible); config["subtitle"] = st.text_input("Subtitle", config.get("subtitle", ""), key=f"subtitle_{key}"); config["precision"] = st.number_input("Decimal precision", 0, 6, int(config.get("precision", 2)), key=f"precision_{key}"); config["prefix"] = st.text_input("Prefix", config.get("prefix", ""), key=f"prefix_{key}"); config["suffix"] = st.text_input("Suffix", config.get("suffix", ""), key=f"suffix_{key}"); config["percentage"] = st.checkbox("Percentage format", value=config.get("percentage", False), key=f"percentage_{key}")
+        axes = st.columns(3, gap="medium")
+        with axes[0]: choose("Metric field", "y_field", compatible)
+        with axes[1]: config["subtitle"] = st.text_input("Subtitle", config.get("subtitle", ""), key=f"subtitle_{key}")
+        with axes[2]: config["precision"] = st.number_input("Decimal precision", 0, 6, int(config.get("precision", 2)), key=f"precision_{key}")
+        details = st.columns(3, gap="medium")
+        with details[0]: config["prefix"] = st.text_input("Prefix", config.get("prefix", ""), key=f"prefix_{key}")
+        with details[1]: config["suffix"] = st.text_input("Suffix", config.get("suffix", ""), key=f"suffix_{key}")
+        with details[2]: config["percentage"] = st.checkbox("Percentage format", value=config.get("percentage", False), key=f"percentage_{key}")
     elif config["type"] in {"pie", "waffle", "treemap"}:
-        choose("Group by", "group_field", categorical or all_fields); choose("Metric field", "y_field", compatible); config["top_n"] = st.number_input("Top N", 1, 100, int(config.get("top_n", 10)), key=f"top_{key}"); config["legend"] = st.checkbox("Legend", value=config.get("legend", True), key=f"legend_{key}"); config["donut"] = st.checkbox("Donut mode", value=config.get("donut", False), key=f"donut_{key}") if config["type"] == "pie" else False; config["cells"] = st.number_input("Number of cells", 25, 400, int(config.get("cells", 100)), key=f"cells_{key}") if config["type"] == "waffle" else 100
+        axes = st.columns(3, gap="medium")
+        with axes[0]: choose("Group by", "group_field", categorical or all_fields)
+        with axes[1]: choose("Metric field", "y_field", compatible)
+        with axes[2]: config["top_n"] = st.number_input("Top N", 1, 100, int(config.get("top_n", 10)), key=f"top_{key}")
+        details = st.columns(3, gap="medium")
+        with details[0]: config["legend"] = st.checkbox("Legend", value=config.get("legend", True), key=f"legend_{key}")
+        with details[1]: config["donut"] = st.checkbox("Donut mode", value=config.get("donut", False), key=f"donut_{key}") if config["type"] == "pie" else False
+        with details[2]: config["cells"] = st.number_input("Number of cells", 25, 400, int(config.get("cells", 100)), key=f"cells_{key}") if config["type"] == "waffle" else 100
     elif config["type"] == "heat_map":
-        choose("X-axis", "x_field", all_fields); choose("Y-axis", "group_field", categorical or all_fields); choose("Cell metric", "y_field", compatible)
+        axes = st.columns(3, gap="medium")
+        with axes[0]: choose("X-axis", "x_field", all_fields)
+        with axes[1]: choose("Y-axis", "group_field", categorical or all_fields)
+        with axes[2]: choose("Cell metric", "y_field", compatible)
     elif config["type"] == "map":
-        choose("Latitude", "latitude", types["latitude"]); choose("Longitude", "longitude", types["longitude"]); choose("Metric", "y_field", numeric, None); choose("Breakdown", "breakdown", [None] + categorical, None)
+        axes = st.columns(4, gap="medium")
+        with axes[0]: choose("Latitude", "latitude", types["latitude"])
+        with axes[1]: choose("Longitude", "longitude", types["longitude"])
+        with axes[2]: choose("Metric", "y_field", numeric, None)
+        with axes[3]: choose("Breakdown", "breakdown", [None] + categorical, None)
     elif config["type"] == "word_cloud":
-        choose("Text field", "text_field", categorical or all_fields); config["max_words"] = st.number_input("Maximum words", 5, 200, int(config.get("max_words", 30)), key=f"words_{key}"); config["min_frequency"] = st.number_input("Minimum frequency", 1, 100, int(config.get("min_frequency", 1)), key=f"frequency_{key}"); config["stop_words"] = st.text_input("Stop words", config.get("stop_words", ""), key=f"stops_{key}")
+        axes = st.columns(4, gap="medium")
+        with axes[0]: choose("Text field", "text_field", categorical or all_fields)
+        with axes[1]: config["max_words"] = st.number_input("Maximum words", 5, 200, int(config.get("max_words", 30)), key=f"words_{key}")
+        with axes[2]: config["min_frequency"] = st.number_input("Minimum frequency", 1, 100, int(config.get("min_frequency", 1)), key=f"frequency_{key}")
+        with axes[3]: config["stop_words"] = st.text_input("Stop words", config.get("stop_words", ""), key=f"stops_{key}")
     return color_controls(df, field_types, config)
 
 
@@ -616,24 +665,28 @@ def main():
         stats = st.columns(4); stats[0].metric("Rows", f"{len(df):,}"); stats[1].metric("Columns", len(df.columns)); stats[2].metric("Numeric", len(field_types["numeric"])); stats[3].metric("Datetime", len(field_types["datetime"]))
         st.dataframe(df.head(10), use_container_width=True); st.caption("Fields: " + ", ".join(f"{field} ({'numeric' if field in field_types['numeric'] else 'datetime' if field in field_types['datetime'] else 'categorical'})" for field in df.columns))
     base = st.session_state.editor_config or default_config("Bar", field_types)
-    left, right = st.columns([2.2, 1], gap="large")
-    with right:
-        with st.container(border=True):
-            st.markdown("**Configure visualization**")
-            config = editor_controls(df, field_types, base)
-            config["filters"] = filter_controls(df, field_types)
-            if st.button("Add to Dashboard", type="primary", use_container_width=True):
-                st.session_state.dashboard_charts = add_chart_to_dashboard(st.session_state.dashboard_charts, None, config["type"], config, config.get("title")); st.success("Visualization added.")
-    with left:
-        st.markdown("**Live preview**")
+    st.markdown("**Live preview**")
+    preview_slot = st.empty()
+    with preview_slot.container(border=True):
+        st.info("Preview updates as you configure the visualization below.")
+    st.markdown('<div class="builder-section">Configure Visualization</div>', unsafe_allow_html=True)
+    with st.container(border=True):
+        config = editor_controls(df, field_types, base)
+        st.markdown('<div class="builder-section">Filters</div>', unsafe_allow_html=True)
+        config["filters"] = filter_controls(df, field_types)
+        if st.button("Add to Dashboard", type="primary", use_container_width=True):
+            st.session_state.dashboard_charts = add_chart_to_dashboard(st.session_state.dashboard_charts, None, config["type"], config, config.get("title")); st.success("Visualization added.")
+    with preview_slot.container(border=True):
         preview = render_visualization(df, config)
         if isinstance(preview, dict):
             number_color = preview["color"] if preview.get("apply_to") in {"KPI number", "Both"} else readable_text_color(preview["background"])
             card_background = preview["color"] if preview.get("apply_to") in {"KPI background", "Both"} else preview["background"]
             text_color = readable_text_color(card_background)
             st.markdown(f"<div style='background:{card_background};border:1px solid #9bbdce;border-radius:6px;padding:4rem 1rem;text-align:center;color:{text_color}'><div style='font-size:3rem;font-weight:800;color:{number_color}'>{preview['value']}</div><div style='font-size:1.2rem;color:{text_color}'>{preview['title']}</div><div style='color:{text_color};opacity:.78'>{preview['subtitle']}</div></div>", unsafe_allow_html=True)
-        elif preview is not None: st.altair_chart(preview, use_container_width=True)
-        else: st.info("This visualization needs compatible fields or contains no matching data.")
+        elif preview is not None:
+            st.altair_chart(preview, use_container_width=True)
+        else:
+            st.info("This visualization needs compatible fields or contains no matching data.")
     st.divider(); st.subheader("Dashboard")
     panels = st.session_state.dashboard_charts
     for index, panel in enumerate(panels):
