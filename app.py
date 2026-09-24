@@ -651,6 +651,58 @@ def delete_chart_from_dashboard(dashboard, index):
     return dashboard
 
 
+def dashboard_panel_index(dashboard, panel_id):
+    return next((index for index, panel in enumerate(dashboard) if str(panel.get("id")) == str(panel_id)), None)
+
+
+def apply_dashboard_panel_action(dashboard, panel_id, action):
+    """Apply one contextual-panel action without touching unrelated panels."""
+    index = dashboard_panel_index(dashboard, panel_id)
+    if index is None:
+        return None
+    panel = dashboard[index]
+    if action == "Edit" and panel_config(panel):
+        return deepcopy(panel_config(panel))
+    if action == "Duplicate" and panel_config(panel):
+        copy_panel = {**panel, "id": uuid4().hex, "title": panel.get("title", "Visualization") + " copy", "visualization_config": deepcopy(panel_config(panel)), "layout": deepcopy(panel["layout"])}
+        copy_panel.pop("config", None)
+        copy_panel["layout"]["x"] = min(DASHBOARD_COLUMNS - copy_panel["layout"]["width"], copy_panel["layout"]["x"] + 1)
+        copy_panel["layout"]["y"] += 1
+        dashboard.insert(index + 1, copy_panel)
+    elif action == "Delete":
+        delete_chart_from_dashboard(dashboard, index)
+    elif action == "Reset Size":
+        panel["layout"].update({"width": DEFAULT_PANEL_WIDTH, "height": DEFAULT_PANEL_HEIGHT})
+    elif action == "Reset Position":
+        panel["layout"].update({"x": (index % 2) * DEFAULT_PANEL_WIDTH, "y": (index // 2) * DEFAULT_PANEL_HEIGHT})
+    return None
+
+
+def consume_dashboard_panel_menu_events(dashboard):
+    """Translate streamlit-elements menu events into the existing panel mutations."""
+    actions = ["Edit", "Duplicate", "Delete", "Reset Size", "Reset Position"]
+    open_menu = st.session_state.get("dashboard_open_menu_panel_id")
+    for panel in list(dashboard):
+        panel_id = str(panel.get("id"))
+        toggle_key = f"dashboard_menu_toggle_{panel_id}"
+        if toggle_key in st.session_state:
+            st.session_state.pop(toggle_key)
+            open_menu = None if open_menu == panel_id else panel_id
+        for action in actions:
+            action_key = f"dashboard_menu_{action.lower().replace(' ', '_')}_{panel_id}"
+            if action_key in st.session_state:
+                st.session_state.pop(action_key)
+                editor_config = apply_dashboard_panel_action(dashboard, panel_id, action)
+                if editor_config is not None:
+                    st.session_state.editor_config = editor_config
+                    st.session_state.dashboard_edit_panel_id = panel_id
+                    st.session_state.editor_revision = st.session_state.get("editor_revision", 0) + 1
+                open_menu = None
+                st.session_state.dashboard_open_menu_panel_id = open_menu
+                st.rerun()
+    st.session_state.dashboard_open_menu_panel_id = open_menu
+
+
 def chart_png(chart):
     if chart is None:
         return None
@@ -1051,8 +1103,15 @@ def render_dashboard_workspace(df, panels, appearance):
                     panel_layout_data = panel["layout"]
                     panel_style = dashboard_panel_style(appearance)
                     with mui.Paper(key=str(panel["id"]), elevation=0, style={"backgroundColor": styling["background_color"], "overflow": "hidden", "height": "100%", "minHeight": "0", "display": "flex", "flexDirection": "column", **panel_style}):
-                        html.div(panel.get("title", "Visualization"), className="panel-drag-handle", style={"height": "34px", "minHeight": "34px", "padding": "8px 10px", "fontWeight": "700", "color": readable_text_color(styling["background_color"])})
-                        html.iframe(key=f"frame-{panel['id']}-{panel_layout_data['width']}-{panel_layout_data['height']}", srcDoc=visualization_html(df, panel), style={"display": "block", "width": "100%", "height": "calc(100% - 34px)", "minHeight": "0", "border": "0", "backgroundColor": styling["background_color"]})
+                        panel_id = str(panel["id"])
+                        with mui.Box(style={"height": "34px", "minHeight": "34px", "display": "flex", "alignItems": "center", "position": "relative", "zIndex": 2}):
+                            html.div(panel.get("title", "Visualization"), className="panel-drag-handle", style={"height": "34px", "flex": "1 1 auto", "minWidth": "0", "padding": "8px 4px 8px 10px", "fontWeight": "700", "color": readable_text_color(styling["background_color"]), "overflow": "hidden", "textOverflow": "ellipsis", "whiteSpace": "nowrap"})
+                            mui.IconButton("⋮", aria_label="Panel actions", onClick=sync(f"dashboard_menu_toggle_{panel_id}"), size="small", style={"flex": "0 0 auto", "marginRight": "4px", "color": readable_text_color(styling["background_color"]), "cursor": "pointer"})
+                            if st.session_state.get("dashboard_open_menu_panel_id") == panel_id:
+                                with mui.Paper(elevation=8, style={"position": "absolute", "top": "31px", "right": "4px", "zIndex": 20, "minWidth": "156px", "padding": "4px", "backgroundColor": "#18232b", "borderRadius": "6px"}):
+                                    for action in ["Edit", "Duplicate", "Delete", "Reset Size", "Reset Position"]:
+                                        mui.Button(action, onClick=sync(f"dashboard_menu_{action.lower().replace(' ', '_')}_{panel_id}"), variant="text", fullWidth=True, style={"justifyContent": "flex-start", "color": "#f4fbfd" if action != "Delete" else "#ff9b9b", "textTransform": "none", "minHeight": "30px"})
+                        html.iframe(key=f"frame-{panel['id']}-{panel_layout_data['width']}-{panel_layout_data['height']}", srcDoc=visualization_html(df, panel), style={"display": "block", "position": "relative", "zIndex": 1, "width": "100%", "height": "calc(100% - 34px)", "minHeight": "0", "border": "0", "backgroundColor": styling["background_color"]})
     if st.session_state.get("dashboard_layout"):
         update_dashboard_layout(panels, st.session_state.pop("dashboard_layout"))
 
@@ -1063,6 +1122,7 @@ def main():
     if "dashboard_charts" not in st.session_state: st.session_state.dashboard_charts = []
     if "dashboard_appearance" not in st.session_state: st.session_state.dashboard_appearance = default_dashboard_appearance()
     if "editor_config" not in st.session_state: st.session_state.editor_config = None
+    if "dashboard_edit_panel_id" not in st.session_state: st.session_state.dashboard_edit_panel_id = None
     uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
     if uploaded_file is None:
         st.markdown('<div class="empty-canvas">Upload a CSV to begin building visualizations.</div>', unsafe_allow_html=True)
@@ -1084,8 +1144,16 @@ def main():
         config = editor_controls(df, field_types, base)
         st.markdown('<div class="builder-section">Filters</div>', unsafe_allow_html=True)
         config["filters"] = filter_controls(df, field_types)
-        if st.button("Add to Dashboard", type="primary", use_container_width=True):
-            st.session_state.dashboard_charts = add_chart_to_dashboard(st.session_state.dashboard_charts, None, config["type"], config, config.get("title")); st.success("Visualization added.")
+        edit_index = dashboard_panel_index(st.session_state.dashboard_charts, st.session_state.dashboard_edit_panel_id)
+        if st.button("Update Dashboard" if edit_index is not None else "Add to Dashboard", type="primary", use_container_width=True):
+            if edit_index is None:
+                st.session_state.dashboard_charts = add_chart_to_dashboard(st.session_state.dashboard_charts, None, config["type"], config, config.get("title")); st.success("Visualization added.")
+            else:
+                panel = st.session_state.dashboard_charts[edit_index]
+                panel.update({"type": config["type"], "title": config.get("title", panel.get("title", "Visualization")), "visualization_config": deepcopy(config)})
+                panel.pop("config", None)
+                st.session_state.dashboard_edit_panel_id = None
+                st.success("Visualization updated.")
     with preview_slot.container(border=True):
         preview = render_visualization(df, config)
         if isinstance(preview, dict):
@@ -1096,12 +1164,13 @@ def main():
             st.info("This visualization needs compatible fields or contains no matching data.")
     st.divider(); st.subheader("Dashboard")
     panels = st.session_state.dashboard_charts
+    consume_dashboard_panel_menu_events(panels)
     for index, panel in enumerate(panels):
         panel_layout(panel, index)
     toolbar = st.columns([4, 1, 1, 1, 2])
     toolbar[0].markdown(f"**Analytics workspace** · {len(panels)} panels")
     if toolbar[1].button("+ Add visualization", key="dashboard_add_visualization"):
-        st.session_state.editor_config = default_config("Bar", field_types); st.session_state.editor_revision = st.session_state.get("editor_revision", 0) + 1; st.rerun()
+        st.session_state.editor_config = default_config("Bar", field_types); st.session_state.dashboard_edit_panel_id = None; st.session_state.editor_revision = st.session_state.get("editor_revision", 0) + 1; st.rerun()
     if toolbar[2].button("Reset layout", key="dashboard_reset_layout"):
         reset_dashboard_layout(panels); st.rerun()
     if toolbar[3].button("Download PNG", key="dashboard_download_png"):
@@ -1112,22 +1181,6 @@ def main():
     if panels:
         render_dashboard_workspace(df, panels, appearance)
         st.caption("Drag panel headers to move panels. Drag panel edges or corners to resize.")
-        for index, panel in enumerate(panels):
-            actions = st.columns([3, 1, 1, 1, 1, 1])
-            actions[0].caption(f"P{index + 1:02d} · {panel.get('title', 'Visualization')} · {panel['layout']['width']}×{panel['layout']['height']}")
-            if actions[1].button("Edit", key=f"edit_{index}") and panel_config(panel):
-                st.session_state.editor_config = deepcopy(panel_config(panel)); st.session_state.editor_revision = st.session_state.get("editor_revision", 0) + 1; st.rerun()
-            if actions[2].button("Duplicate", key=f"duplicate_{index}") and panel_config(panel):
-                copy_panel = {**panel, "id": uuid4().hex, "title": panel.get("title", "Visualization") + " copy", "visualization_config": deepcopy(panel_config(panel)), "layout": deepcopy(panel["layout"])}
-                copy_panel.pop("config", None)
-                copy_panel["layout"]["x"] = min(DASHBOARD_COLUMNS - copy_panel["layout"]["width"], copy_panel["layout"]["x"] + 1); copy_panel["layout"]["y"] += 1
-                st.session_state.dashboard_charts.insert(index + 1, copy_panel); st.rerun()
-            if actions[3].button("Delete", key=f"delete_{index}"):
-                st.session_state.dashboard_charts = delete_chart_from_dashboard(st.session_state.dashboard_charts, index); st.rerun()
-            if actions[4].button("Reset size", key=f"reset_size_{index}"):
-                panel["layout"].update({"width": DEFAULT_PANEL_WIDTH, "height": DEFAULT_PANEL_HEIGHT}); st.rerun()
-            if actions[5].button("Reset position", key=f"reset_position_{index}"):
-                panel["layout"].update({"x": (index % 2) * DEFAULT_PANEL_WIDTH, "y": (index // 2) * DEFAULT_PANEL_HEIGHT}); st.rerun()
         if st.session_state.get("dashboard_export_ready"):
             st.download_button("Download Dashboard as PNG", build_dashboard_image(panels, df), "omer-dashboard.png", "image/png", key="dashboard_export_download")
             st.session_state.dashboard_export_ready = False

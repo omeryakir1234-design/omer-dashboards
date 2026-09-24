@@ -86,3 +86,23 @@ def test_dashboard_image_appearance_uses_the_requested_fit_and_overlay():
 
     assert "url(data:image/png;base64,abc)" in workspace["backgroundImage"]
     assert workspace["backgroundSize"].endswith("contain")
+
+
+def test_contextual_panel_actions_target_only_the_selected_panel():
+    config = {"type": "bar", "styling": {"main_color": "#2789aa"}}
+    dashboard = [
+        {"id": "first", "title": "First", "visualization_config": deepcopy(config), "layout": {"x": 1, "y": 2, "width": 9, "height": 7}},
+        {"id": "second", "title": "Second", "visualization_config": deepcopy(config), "layout": {"x": 4, "y": 8, "width": 3, "height": 3}},
+    ]
+
+    app.apply_dashboard_panel_action(dashboard, "first", "Duplicate")
+    duplicate = dashboard[1]
+    app.apply_dashboard_panel_action(dashboard, "second", "Reset Size")
+    app.apply_dashboard_panel_action(dashboard, "second", "Reset Position")
+    app.apply_dashboard_panel_action(dashboard, duplicate["id"], "Delete")
+
+    assert len(dashboard) == 2
+    assert duplicate["id"] != "first"
+    assert duplicate["visualization_config"] == config
+    assert duplicate["visualization_config"] is not dashboard[0]["visualization_config"]
+    assert dashboard[1]["layout"] == {"x": 0, "y": 4, "width": app.DEFAULT_PANEL_WIDTH, "height": app.DEFAULT_PANEL_HEIGHT}
