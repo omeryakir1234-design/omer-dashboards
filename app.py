@@ -175,7 +175,7 @@ def default_config(chart_type, field_types):
             "sort": "Metric", "sort_direction": "Descending", "top_n": 20, "orientation": "Vertical", "legend": True,
             "labels": False, "points": True, "stacked": False, "donut": False, "donut_hole": 0.45, "target": None,
             "subtitle": "", "precision": 2, "prefix": "", "suffix": "", "percentage": False, "cells": 100,
-            "min_frequency": 1, "max_words": 30, "stop_words": "the, a, an, and, or, to, of", "font_min": 12, "font_max": 44, "word_spacing": 4, "word_rotation": "None",
+            "min_frequency": 1, "max_words": 30, "stop_words": "the, a, an, and, or, to, of", "font_min": 12, "font_max": 44, "word_spacing": 18, "word_rotation": "None",
             "filters": [], "styling": default_styling()}
 
 
@@ -363,14 +363,16 @@ def _word_font(size):
 def _word_bounds(word, font, spacing):
     word = str(word)
     left, top, right, bottom = font.getbbox(word)
-    return right - left + spacing * 2, bottom - top + spacing * 2
+    font_size = max(8, int(getattr(font, "size", 8)))
+    safety_padding = max(1, int(spacing) + round(font_size * 0.25))
+    return right - left + safety_padding * 2, bottom - top + safety_padding * 2
 
 
 def _rectangles_overlap(first, second):
     return not (first[2] <= second[0] or first[0] >= second[2] or first[3] <= second[1] or first[1] >= second[3])
 
 
-def _place_words(words, width=720, height=360, spacing=4):
+def _place_words(words, width=720, height=360, spacing=18):
     """Place measured words on a deterministic spiral while rejecting collisions."""
     placed = []
     center_x, center_y = width / 2, height / 2
@@ -390,6 +392,18 @@ def _place_words(words, width=720, height=360, spacing=4):
             if all(not _rectangles_overlap(rectangle, previous) for previous in placed):
                 found = (x, y, rectangle)
                 break
+        if found is None:
+            grid_step = max(12, int(spacing))
+            candidates = []
+            for y in range(int(word_height / 2 + 4), int(height - word_height / 2 - 4), grid_step):
+                for x in range(int(word_width / 2 + 4), int(width - word_width / 2 - 4), grid_step):
+                    distance = (x - center_x) ** 2 + (y - center_y) ** 2
+                    candidates.append((distance, x, y))
+            for _, x, y in sorted(candidates):
+                rectangle = (x - word_width / 2, y - word_height / 2, x + word_width / 2, y + word_height / 2)
+                if all(not _rectangles_overlap(rectangle, previous) for previous in placed):
+                    found = (x, y, rectangle)
+                    break
         if found is None:
             continue
         word["x"], word["y"] = found[0], found[1]
@@ -439,7 +453,7 @@ def build_wordcloud(df, config):
         scaled = (counts["value"] - minimum) / (maximum - minimum)
         counts["font_size"] = minimum_font + scaled.pow(0.65) * (maximum_font - minimum_font)
     words = [{"word": row["__word"], "value": float(row["value"]), "font_size": float(row["font_size"])} for _, row in counts.iterrows()]
-    words = _place_words(words, spacing=max(1, int(config.get("word_spacing", 4))))
+    words = _place_words(words, spacing=max(12, int(config.get("word_spacing", 18))))
     if not words:
         return None
     positioned = pd.DataFrame(words)
@@ -717,7 +731,7 @@ def editor_controls(df, field_types, config):
         details = st.columns(3, gap="medium")
         with details[0]: config["font_min"] = st.number_input("Minimum font size", 8, 80, int(config.get("font_min", 12)), key=f"font_min_{key}")
         with details[1]: config["font_max"] = st.number_input("Maximum font size", 12, 140, int(config.get("font_max", 44)), key=f"font_max_{key}")
-        with details[2]: config["word_spacing"] = st.number_input("Spacing", 1, 30, int(config.get("word_spacing", 4)), key=f"word_spacing_{key}")
+        with details[2]: config["word_spacing"] = st.number_input("Spacing", 8, 50, max(8, int(config.get("word_spacing", 18))), key=f"word_spacing_{key}")
         config["stop_words"] = st.text_input("Stop words", config.get("stop_words", ""), key=f"stops_{key}")
     return color_controls(df, field_types, config)
 
