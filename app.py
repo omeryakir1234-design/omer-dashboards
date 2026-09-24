@@ -1,5 +1,6 @@
 from io import BytesIO
 from copy import deepcopy
+from base64 import b64encode
 import json
 import math
 from uuid import uuid4
@@ -88,10 +89,54 @@ DATE_GROUPS = ["None", "Minute", "Hour", "Day", "Week", "Month", "Year"]
 DASHBOARD_COLUMNS = 12
 DEFAULT_PANEL_WIDTH = 6
 DEFAULT_PANEL_HEIGHT = 4
+DEFAULT_DASHBOARD_APPEARANCE = {
+    "background_mode": "Solid",
+    "background_color": "#d9edf9",
+    "decoration": "None",
+    "decoration_color": "#2789aa",
+    "decoration_opacity": 0.18,
+    "decoration_thickness": 1,
+    "decoration_x_spacing": 32,
+    "decoration_y_spacing": 32,
+    "dot_size": 2,
+    "diagonal_angle": 45,
+    "image_data": None,
+    "image_fit": "Cover",
+    "image_position": "Center",
+    "image_opacity": 0.35,
+    "overlay_enabled": False,
+    "overlay_color": "#10222c",
+    "overlay_opacity": 0.25,
+    "shadow_enabled": True,
+    "shadow_color": "#10222c",
+    "shadow_intensity": 8,
+    "shadow_blur": 24,
+    "shadow_spread": 0,
+    "shadow_opacity": 0.16,
+    "glow_enabled": False,
+    "glow_color": "#54b8d5",
+    "glow_intensity": 0,
+    "glow_blur": 22,
+    "border_enabled": True,
+    "border_color": "#2d3b47",
+    "border_opacity": 1.0,
+    "border_thickness": 1,
+    "border_radius": 6,
+}
 
 
 def default_styling():
     return {key: (value.copy() if isinstance(value, (list, dict)) else value) for key, value in DEFAULT_STYLING.items()}
+
+
+def default_dashboard_appearance():
+    return DEFAULT_DASHBOARD_APPEARANCE.copy()
+
+
+def ensure_dashboard_appearance(appearance):
+    merged = default_dashboard_appearance()
+    merged.update(appearance or {})
+    return merged
 
 
 def ensure_styling(config):
@@ -119,6 +164,53 @@ def readable_text_color(background):
     channels = [int(background[index:index + 2], 16) for index in (0, 2, 4)]
     luminance = (0.299 * channels[0]) + (0.587 * channels[1]) + (0.114 * channels[2])
     return "#f4fbfd" if luminance < 145 else "#10222c"
+
+
+def color_with_opacity(color, opacity):
+    color = valid_color(color, DEFAULT_BACKGROUND).lstrip("#")
+    red, green, blue = (int(color[index:index + 2], 16) for index in (0, 2, 4))
+    return f"rgba({red}, {green}, {blue}, {max(0, min(1, float(opacity))):.3f})"
+
+
+def dashboard_workspace_style(appearance):
+    appearance = ensure_dashboard_appearance(appearance)
+    background = appearance["background_color"]
+    mode = appearance["background_mode"]
+    color = color_with_opacity(appearance["decoration_color"], appearance["decoration_opacity"])
+    x_space, y_space = int(appearance["decoration_x_spacing"]), int(appearance["decoration_y_spacing"])
+    thickness, dot_size = int(appearance["decoration_thickness"]), int(appearance["dot_size"])
+    image_layers = []
+    if mode == "Image" and appearance.get("image_data"):
+        if appearance["overlay_enabled"]:
+            overlay = color_with_opacity(appearance["overlay_color"], appearance["overlay_opacity"])
+            image_layers.append(f"linear-gradient({overlay}, {overlay})")
+        image_layers.append(f"linear-gradient({color_with_opacity(background, 1 - appearance['image_opacity'])}, {color_with_opacity(background, 1 - appearance['image_opacity'])})")
+        image_layers.append(f"url({appearance['image_data']})")
+        fit = "cover" if appearance["image_fit"] == "Cover" else "contain"
+        image = {"backgroundImage": ", ".join(image_layers), "backgroundSize": ", ".join(["auto"] * (len(image_layers) - 1) + [fit]), "backgroundPosition": ", ".join(["center"] * (len(image_layers) - 1) + [appearance["image_position"].lower()]), "backgroundRepeat": "no-repeat"}
+    else:
+        image = {}
+    patterns = {
+        "Grid": f"linear-gradient(to right, {color} {thickness}px, transparent {thickness}px), linear-gradient(to bottom, {color} {thickness}px, transparent {thickness}px)",
+        "Vertical lines": f"linear-gradient(to right, {color} {thickness}px, transparent {thickness}px)",
+        "Horizontal lines": f"linear-gradient(to bottom, {color} {thickness}px, transparent {thickness}px)",
+        "Dots": f"radial-gradient(circle, {color} {dot_size}px, transparent {dot_size + 1}px)",
+        "Diagonal lines": f"repeating-linear-gradient({int(appearance['diagonal_angle'])}deg, transparent 0, transparent {max(1, x_space - thickness)}px, {color} {max(1, x_space - thickness)}px, {color} {x_space}px)",
+    }
+    if mode == "Pattern" and appearance["decoration"] in patterns:
+        image = {"backgroundImage": patterns[appearance["decoration"]], "backgroundSize": f"{x_space}px {y_space}px"}
+    return {"position": "relative", "padding": "0", "minHeight": "480px", "backgroundColor": background, "borderRadius": "8px", "overflow": "hidden", **image}
+
+
+def dashboard_panel_style(appearance):
+    appearance = ensure_dashboard_appearance(appearance)
+    shadows = []
+    if appearance["shadow_enabled"]:
+        shadows.append(f"0 {int(appearance['shadow_intensity'])}px {int(appearance['shadow_blur'])}px {int(appearance['shadow_spread'])}px {color_with_opacity(appearance['shadow_color'], appearance['shadow_opacity'])}")
+    if appearance["glow_enabled"]:
+        shadows.append(f"0 0 {int(appearance['glow_blur'])}px {int(appearance['glow_intensity'])}px {color_with_opacity(appearance['glow_color'], min(1, appearance['glow_intensity'] / 30))}")
+    border = "none" if not appearance["border_enabled"] else f"{int(appearance['border_thickness'])}px solid {color_with_opacity(appearance['border_color'], appearance['border_opacity'])}"
+    return {"border": border, "borderRadius": f"{int(appearance['border_radius'])}px", "boxShadow": ", ".join(shadows) if shadows else "none"}
 
 
 def styling_palette(config, categories=None):
@@ -647,6 +739,76 @@ def color_input(label, value, key):
     return valid_color(st.session_state.get(hex_key), st.session_state.get(picker_key, initial))
 
 
+def dashboard_appearance_controls():
+    appearance = st.session_state.dashboard_appearance
+    revision = st.session_state.get("appearance_revision", 0)
+    key = f"appearance_{revision}"
+    with st.expander("Dashboard Appearance", expanded=False):
+        st.markdown("**Background**")
+        modes = ["Solid", "Pattern", "Image"]
+        appearance["background_mode"] = st.selectbox("Background type", modes, index=modes.index(appearance["background_mode"]), key=f"{key}_mode")
+        appearance["background_color"] = color_input("Dashboard background color", appearance["background_color"], f"{key}_background")
+        if appearance["background_mode"] == "Pattern":
+            decorations = ["None", "Grid", "Vertical lines", "Horizontal lines", "Dots", "Diagonal lines"]
+            appearance["decoration"] = st.selectbox("Decoration", decorations, index=decorations.index(appearance["decoration"]), key=f"{key}_decoration")
+            if appearance["decoration"] != "None":
+                appearance["decoration_color"] = color_input("Decoration color", appearance["decoration_color"], f"{key}_decoration_color")
+                columns = st.columns(3)
+                appearance["decoration_opacity"] = columns[0].slider("Decoration opacity", 0.02, 0.8, float(appearance["decoration_opacity"]), 0.02, key=f"{key}_decoration_opacity")
+                appearance["decoration_x_spacing"] = columns[1].slider("Horizontal spacing", 12, 100, int(appearance["decoration_x_spacing"]), key=f"{key}_x_spacing")
+                appearance["decoration_y_spacing"] = columns[2].slider("Vertical spacing", 12, 100, int(appearance["decoration_y_spacing"]), key=f"{key}_y_spacing")
+                if appearance["decoration"] == "Dots":
+                    appearance["dot_size"] = st.slider("Dot size", 1, 8, int(appearance["dot_size"]), key=f"{key}_dot_size")
+                else:
+                    appearance["decoration_thickness"] = st.slider("Line thickness", 1, 5, int(appearance["decoration_thickness"]), key=f"{key}_decoration_thickness")
+                if appearance["decoration"] == "Diagonal lines":
+                    appearance["diagonal_angle"] = st.slider("Line angle", 15, 165, int(appearance["diagonal_angle"]), key=f"{key}_diagonal_angle")
+        if appearance["background_mode"] == "Image":
+            image = st.file_uploader("Background image", type=["png", "jpg", "jpeg", "webp"], key=f"{key}_image")
+            if image is not None:
+                encoded = b64encode(image.getvalue()).decode("ascii")
+                appearance["image_data"] = f"data:{image.type or 'image/png'};base64,{encoded}"
+            if appearance.get("image_data"):
+                columns = st.columns(3)
+                appearance["image_fit"] = columns[0].selectbox("Image fit", ["Cover", "Contain"], index=["Cover", "Contain"].index(appearance["image_fit"]), key=f"{key}_image_fit")
+                positions = ["Center", "Top", "Bottom", "Left", "Right"]
+                appearance["image_position"] = columns[1].selectbox("Image position", positions, index=positions.index(appearance["image_position"]), key=f"{key}_image_position")
+                appearance["image_opacity"] = columns[2].slider("Image opacity", 0.05, 1.0, float(appearance["image_opacity"]), 0.05, key=f"{key}_image_opacity")
+                appearance["overlay_enabled"] = st.checkbox("Use image overlay", value=appearance["overlay_enabled"], key=f"{key}_overlay_enabled")
+                if appearance["overlay_enabled"]:
+                    overlay = st.columns(2)
+                    appearance["overlay_color"] = color_input("Overlay color", appearance["overlay_color"], f"{key}_overlay_color")
+                    appearance["overlay_opacity"] = overlay[1].slider("Overlay opacity", 0.0, 1.0, float(appearance["overlay_opacity"]), 0.05, key=f"{key}_overlay_opacity")
+        st.markdown("**Panel Effects**")
+        effect_columns = st.columns(3)
+        appearance["shadow_enabled"] = effect_columns[0].checkbox("Shadow", value=appearance["shadow_enabled"], key=f"{key}_shadow_enabled")
+        appearance["glow_enabled"] = effect_columns[1].checkbox("Glow", value=appearance["glow_enabled"], key=f"{key}_glow_enabled")
+        appearance["border_enabled"] = effect_columns[2].checkbox("Border", value=appearance["border_enabled"], key=f"{key}_border_enabled")
+        if appearance["shadow_enabled"]:
+            appearance["shadow_color"] = color_input("Shadow color", appearance["shadow_color"], f"{key}_shadow_color")
+            columns = st.columns(4)
+            appearance["shadow_intensity"] = columns[0].slider("Shadow offset", 0, 30, int(appearance["shadow_intensity"]), key=f"{key}_shadow_offset")
+            appearance["shadow_blur"] = columns[1].slider("Shadow blur", 0, 60, int(appearance["shadow_blur"]), key=f"{key}_shadow_blur")
+            appearance["shadow_spread"] = columns[2].slider("Shadow spread", -10, 30, int(appearance["shadow_spread"]), key=f"{key}_shadow_spread")
+            appearance["shadow_opacity"] = columns[3].slider("Shadow opacity", 0.0, 1.0, float(appearance["shadow_opacity"]), 0.05, key=f"{key}_shadow_opacity")
+        if appearance["glow_enabled"]:
+            appearance["glow_color"] = color_input("Glow color", appearance["glow_color"], f"{key}_glow_color")
+            columns = st.columns(2)
+            appearance["glow_intensity"] = columns[0].slider("Glow intensity", 0, 30, int(appearance["glow_intensity"]), key=f"{key}_glow_intensity")
+            appearance["glow_blur"] = columns[1].slider("Glow blur", 0, 80, int(appearance["glow_blur"]), key=f"{key}_glow_blur")
+        if appearance["border_enabled"]:
+            appearance["border_color"] = color_input("Border color", appearance["border_color"], f"{key}_border_color")
+            columns = st.columns(2)
+            appearance["border_thickness"] = columns[0].slider("Border thickness", 1, 6, int(appearance["border_thickness"]), key=f"{key}_border_thickness")
+            appearance["border_opacity"] = columns[1].slider("Border opacity", 0.0, 1.0, float(appearance["border_opacity"]), 0.05, key=f"{key}_border_opacity")
+        appearance["border_radius"] = st.slider("Panel corner radius", 0, 32, int(appearance["border_radius"]), key=f"{key}_radius")
+        if st.button("Reset Dashboard Appearance", key=f"{key}_reset"):
+            st.session_state.dashboard_appearance = default_dashboard_appearance()
+            st.session_state.appearance_revision = revision + 1
+            st.rerun()
+    return appearance
+
+
 def color_controls(df, field_types, config):
     styling = ensure_styling(config)
     widget_key = f"{st.session_state.get('editor_revision', 0)}"
@@ -874,7 +1036,7 @@ def metric_html(output):
     return f"<div style='box-sizing:border-box;height:100%;padding:12px;background:{card_background};color:{text_color};display:flex;flex-direction:column;overflow:hidden'><div style='{title_css}{line_css};flex:0 0 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>{output['title']}</div><div style='flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:0'><div style='font-size:clamp(28px,10vh,72px);font-weight:800;color:{number_color};line-height:1.1'>{output['value']}</div><small>{output.get('subtitle', '')}</small></div></div>"
 
 
-def render_dashboard_workspace(df, panels):
+def render_dashboard_workspace(df, panels, appearance):
     for index, panel in enumerate(panels):
         panel_layout(panel, index)
     layout = [
@@ -882,13 +1044,15 @@ def render_dashboard_workspace(df, panels):
         for panel in panels
     ]
     with elements("dashboard_workspace"):
-        with elements_dashboard.Grid(layout, cols={"lg": DASHBOARD_COLUMNS}, breakpoints={"lg": 1200}, rowHeight=120, width="100%", compactType=None, isResizable=True, isDraggable=True, draggableHandle=".panel-drag-handle", onLayoutChange=sync("dashboard_layout")):
-            for panel in panels:
-                styling = ensure_styling(panel_config(panel))
-                layout = panel["layout"]
-                with mui.Paper(key=str(panel["id"]), elevation=2, style={"backgroundColor": styling["background_color"], "border": "1px solid #2d3b47", "borderRadius": "6px", "overflow": "hidden", "height": "100%", "minHeight": "0", "display": "flex", "flexDirection": "column"}):
-                    html.div(panel.get("title", "Visualization"), className="panel-drag-handle", style={"height": "34px", "minHeight": "34px", "padding": "8px 10px", "fontWeight": "700", "color": readable_text_color(styling["background_color"])})
-                    html.iframe(key=f"frame-{panel['id']}-{layout['width']}-{layout['height']}", srcDoc=visualization_html(df, panel), style={"display": "block", "width": "100%", "height": "calc(100% - 34px)", "minHeight": "0", "border": "0", "backgroundColor": styling["background_color"]})
+        with mui.Box(style=dashboard_workspace_style(appearance)):
+            with elements_dashboard.Grid(layout, cols={"lg": DASHBOARD_COLUMNS}, breakpoints={"lg": 1200}, rowHeight=120, width="100%", compactType=None, isResizable=True, isDraggable=True, draggableHandle=".panel-drag-handle", onLayoutChange=sync("dashboard_layout")):
+                for panel in panels:
+                    styling = ensure_styling(panel_config(panel))
+                    panel_layout_data = panel["layout"]
+                    panel_style = dashboard_panel_style(appearance)
+                    with mui.Paper(key=str(panel["id"]), elevation=0, style={"backgroundColor": styling["background_color"], "overflow": "hidden", "height": "100%", "minHeight": "0", "display": "flex", "flexDirection": "column", **panel_style}):
+                        html.div(panel.get("title", "Visualization"), className="panel-drag-handle", style={"height": "34px", "minHeight": "34px", "padding": "8px 10px", "fontWeight": "700", "color": readable_text_color(styling["background_color"])})
+                        html.iframe(key=f"frame-{panel['id']}-{panel_layout_data['width']}-{panel_layout_data['height']}", srcDoc=visualization_html(df, panel), style={"display": "block", "width": "100%", "height": "calc(100% - 34px)", "minHeight": "0", "border": "0", "backgroundColor": styling["background_color"]})
     if st.session_state.get("dashboard_layout"):
         update_dashboard_layout(panels, st.session_state.pop("dashboard_layout"))
 
@@ -897,6 +1061,7 @@ def main():
     st.markdown('<div class="lens-kicker">CSV analytics workspace</div>', unsafe_allow_html=True)
     st.title("Omer's Lens")
     if "dashboard_charts" not in st.session_state: st.session_state.dashboard_charts = []
+    if "dashboard_appearance" not in st.session_state: st.session_state.dashboard_appearance = default_dashboard_appearance()
     if "editor_config" not in st.session_state: st.session_state.editor_config = None
     uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
     if uploaded_file is None:
@@ -943,8 +1108,9 @@ def main():
         st.session_state.dashboard_export_ready = True
     if toolbar[4].button("Clear dashboard", key="dashboard_clear"):
         st.session_state.dashboard_charts = []; st.rerun()
+    appearance = dashboard_appearance_controls()
     if panels:
-        render_dashboard_workspace(df, panels)
+        render_dashboard_workspace(df, panels, appearance)
         st.caption("Drag panel headers to move panels. Drag panel edges or corners to resize.")
         for index, panel in enumerate(panels):
             actions = st.columns([3, 1, 1, 1, 1, 1])

@@ -62,3 +62,27 @@ def test_dashboard_visualization_html_uses_a_responsive_vega_container():
     assert "ResizeObserver" in rendered
     assert "padding:0 12px 12px 0" in rendered
     assert config == original_config
+
+
+def test_dashboard_appearance_is_separate_from_panel_configuration():
+    appearance = app.default_dashboard_appearance()
+    appearance["background_mode"] = "Pattern"
+    appearance["decoration"] = "Grid"
+
+    workspace = app.dashboard_workspace_style(appearance)
+    panel = app.dashboard_panel_style(appearance)
+
+    assert "linear-gradient" in workspace["backgroundImage"]
+    assert workspace["backgroundColor"] == appearance["background_color"]
+    assert "boxShadow" in panel
+    assert "visualization_config" not in appearance
+
+
+def test_dashboard_image_appearance_uses_the_requested_fit_and_overlay():
+    appearance = app.default_dashboard_appearance()
+    appearance.update({"background_mode": "Image", "image_data": "data:image/png;base64,abc", "image_fit": "Contain", "overlay_enabled": True})
+
+    workspace = app.dashboard_workspace_style(appearance)
+
+    assert "url(data:image/png;base64,abc)" in workspace["backgroundImage"]
+    assert workspace["backgroundSize"].endswith("contain")
