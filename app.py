@@ -1,6 +1,7 @@
 from io import BytesIO
 from copy import deepcopy
 import json
+import math
 from uuid import uuid4
 
 import altair as alt
@@ -174,7 +175,7 @@ def default_config(chart_type, field_types):
             "sort": "Metric", "sort_direction": "Descending", "top_n": 20, "orientation": "Vertical", "legend": True,
             "labels": False, "points": True, "stacked": False, "donut": False, "donut_hole": 0.45, "target": None,
             "subtitle": "", "precision": 2, "prefix": "", "suffix": "", "percentage": False, "cells": 100,
-            "min_frequency": 1, "max_words": 30, "stop_words": "the, a, an, and, or, to, of", "font_min": 12, "font_max": 44,
+            "min_frequency": 1, "max_words": 30, "stop_words": "the, a, an, and, or, to, of", "font_min": 12, "font_max": 44, "word_spacing": 4, "word_rotation": "None",
             "filters": [], "styling": default_styling()}
 
 
@@ -352,18 +353,108 @@ def build_treemap(df, config):
     return visualization_properties(chart, config)
 
 
+def _word_font(size):
+    try:
+        return ImageFont.truetype("arial.ttf", max(8, int(size)))
+    except OSError:
+        return ImageFont.load_default()
+
+
+def _word_bounds(word, font, spacing):
+    word = str(word)
+    left, top, right, bottom = font.getbbox(word)
+    return right - left + spacing * 2, bottom - top + spacing * 2
+
+
+def _rectangles_overlap(first, second):
+    return not (first[2] <= second[0] or first[0] >= second[2] or first[3] <= second[1] or first[1] >= second[3])
+
+
+def _place_words(words, width=720, height=360, spacing=4):
+    """Place measured words on a deterministic spiral while rejecting collisions."""
+    placed = []
+    center_x, center_y = width / 2, height / 2
+    for word in words:
+        font = _word_font(word["font_size"])
+        word_width, word_height = _word_bounds(word["word"], font, spacing)
+        found = None
+        max_radius = max(width, height)
+        for step in range(0, int(max_radius * 8)):
+            angle = step * 0.42
+            radius = 1.7 * math.sqrt(step)
+            x = center_x + radius * math.cos(angle)
+            y = center_y + radius * math.sin(angle)
+            rectangle = (x - word_width / 2, y - word_height / 2, x + word_width / 2, y + word_height / 2)
+            if rectangle[0] < 4 or rectangle[1] < 4 or rectangle[2] > width - 4 or rectangle[3] > height - 4:
+                continue
+            if all(not _rectangles_overlap(rectangle, previous) for previous in placed):
+                found = (x, y, rectangle)
+                break
+        if found is None:
+            continue
+        word["x"], word["y"] = found[0], found[1]
+        placed.append(found[2])
+    return [word for word in words if "x" in word]
+
+
+def _word_cloud_values(df, config):
+    text_field = config.get("text_field")
+    if not text_field or text_field not in df.columns:
+        return pd.DataFrame()
+    work = apply_filters(df, config.get("filters", [])).copy()
+    work["__word"] = work[text_field].where(work[text_field].notna()).astype(str).str.strip()
+    work = work[work["__word"].ne("")]
+    stop_words = {word.strip().casefold() for word in config.get("stop_words", "").split(",") if word.strip()}
+    work = work[~work["__word"].str.casefold().isin(stop_words)]
+    if work.empty:
+        return pd.DataFrame()
+    metric_field = config.get("y_field")
+    aggregation = config.get("aggregation", "Count")
+    if aggregation == "Count" or not metric_field or metric_field not in work.columns:
+        values = work.groupby("__word", dropna=False).size().rename("value").reset_index()
+    elif aggregation == "Unique count":
+        values = work.groupby("__word", dropna=False)[metric_field].nunique().rename("value").reset_index()
+    else:
+        numeric = pd.to_numeric(work[metric_field], errors="coerce")
+        work = work.assign(__numeric=numeric).dropna(subset=["__numeric"])
+        if work.empty:
+            return pd.DataFrame()
+        method = {"Sum": "sum", "Average": "mean", "Min": "min", "Max": "max", "Median": "median"}.get(aggregation, "mean")
+        values = work.groupby("__word", dropna=False)["__numeric"].agg(method).rename("value").reset_index()
+    values = values[values["value"] >= float(config.get("min_frequency", 1))]
+    return values.sort_values("value", ascending=False).head(int(config.get("max_words", 30))).reset_index(drop=True)
+
+
 def build_wordcloud(df, config):
-    field = config.get("text_field")
-    if not field or field not in df.columns: return None
-    work = apply_filters(df, config.get("filters", [])); words = work[field].dropna().astype(str).str.lower().str.split().explode()
-    stops = {word.strip() for word in config.get("stop_words", "").split(",") if word.strip()}; words = words[~words.isin(stops) & (words.str.len() > 1)]
-    counts = words.value_counts().rename_axis("word").reset_index(name="value"); counts = counts[counts.value >= int(config.get("min_frequency", 1))].head(int(config.get("max_words", 30)))
-    if counts.empty: return None
+    counts = _word_cloud_values(df, config)
+    if counts.empty:
+        return None
+    minimum = float(counts["value"].min())
+    maximum = float(counts["value"].max())
+    minimum_font = max(8, int(config.get("font_min", 12)))
+    maximum_font = max(minimum_font, int(config.get("font_max", 44)))
+    if maximum == minimum:
+        counts["font_size"] = (minimum_font + maximum_font) / 2
+    else:
+        scaled = (counts["value"] - minimum) / (maximum - minimum)
+        counts["font_size"] = minimum_font + scaled.pow(0.65) * (maximum_font - minimum_font)
+    words = [{"word": row["__word"], "value": float(row["value"]), "font_size": float(row["font_size"])} for _, row in counts.iterrows()]
+    words = _place_words(words, spacing=max(1, int(config.get("word_spacing", 4))))
+    if not words:
+        return None
+    positioned = pd.DataFrame(words)
     styling = ensure_styling(config)
     color_encoding = alt.value(styling["main_color"])
-    if styling.get("color_mode") != "Single color":
-        color_encoding = alt.Color("word:N", scale=alt.Scale(range=styling_palette(config, counts["word"].tolist())), legend=None)
-    chart = alt.Chart(counts).mark_text().encode(text="word:N", size=alt.Size("value:Q", scale=alt.Scale(range=[int(config.get("font_min", 12)), int(config.get("font_max", 44))]), legend=None), color=color_encoding, tooltip=["word", "value"]).properties(title=config.get("title"), height=360)
+    if styling.get("color_mode") not in {"Single color", "Static"}:
+        color_encoding = alt.Color("word:N", scale=alt.Scale(range=styling_palette(config, positioned["word"].tolist())), legend=None)
+    chart = alt.Chart(positioned).mark_text(align="center", baseline="middle").encode(
+        x=alt.X("x:Q", scale=alt.Scale(domain=[0, 720]), axis=None),
+        y=alt.Y("y:Q", scale=alt.Scale(domain=[360, 0]), axis=None),
+        text="word:N",
+        size=alt.Size("font_size:Q", scale=alt.Scale(domain=[minimum_font, maximum_font], range=[minimum_font, maximum_font]), legend=None),
+        color=color_encoding,
+        tooltip=[alt.Tooltip("word:N", title="Word"), alt.Tooltip("value:Q", title="Value", format=",.2f")],
+    ).properties(title=config.get("title"), width=720, height=360)
     return visualization_properties(chart, config)
 
 
@@ -620,9 +711,14 @@ def editor_controls(df, field_types, config):
     elif config["type"] == "word_cloud":
         axes = st.columns(4, gap="medium")
         with axes[0]: choose("Text field", "text_field", categorical or all_fields)
-        with axes[1]: config["max_words"] = st.number_input("Maximum words", 5, 200, int(config.get("max_words", 30)), key=f"words_{key}")
-        with axes[2]: config["min_frequency"] = st.number_input("Minimum frequency", 1, 100, int(config.get("min_frequency", 1)), key=f"frequency_{key}")
-        with axes[3]: config["stop_words"] = st.text_input("Stop words", config.get("stop_words", ""), key=f"stops_{key}")
+        with axes[1]: choose("Metric field", "y_field", compatible, None)
+        with axes[2]: config["max_words"] = st.number_input("Maximum words", 5, 200, int(config.get("max_words", 30)), key=f"words_{key}")
+        with axes[3]: config["min_frequency"] = st.number_input("Minimum frequency", 1, 100, int(config.get("min_frequency", 1)), key=f"frequency_{key}")
+        details = st.columns(3, gap="medium")
+        with details[0]: config["font_min"] = st.number_input("Minimum font size", 8, 80, int(config.get("font_min", 12)), key=f"font_min_{key}")
+        with details[1]: config["font_max"] = st.number_input("Maximum font size", 12, 140, int(config.get("font_max", 44)), key=f"font_max_{key}")
+        with details[2]: config["word_spacing"] = st.number_input("Spacing", 1, 30, int(config.get("word_spacing", 4)), key=f"word_spacing_{key}")
+        config["stop_words"] = st.text_input("Stop words", config.get("stop_words", ""), key=f"stops_{key}")
     return color_controls(df, field_types, config)
 
 
