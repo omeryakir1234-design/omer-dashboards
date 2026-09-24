@@ -1,6 +1,7 @@
 from io import BytesIO
 from copy import deepcopy
 from base64 import b64encode
+from functools import partial
 import json
 import math
 from uuid import uuid4
@@ -123,6 +124,19 @@ DEFAULT_DASHBOARD_APPEARANCE = {
     "border_thickness": 1,
     "border_radius": 6,
 }
+DEFAULT_DASHBOARD_SETTINGS = {
+    "title": "",
+    "title_visible": True,
+    "title_size": 28,
+    "title_weight": "Bold",
+    "title_font": "Default",
+    "title_color": "#10222c",
+    "title_alignment": "Left",
+    "title_top_spacing": 12,
+    "title_bottom_spacing": 12,
+    "title_letter_spacing": 0,
+    "title_line_height": 1.2,
+}
 
 
 def default_styling():
@@ -136,6 +150,16 @@ def default_dashboard_appearance():
 def ensure_dashboard_appearance(appearance):
     merged = default_dashboard_appearance()
     merged.update(appearance or {})
+    return merged
+
+
+def default_dashboard_settings():
+    return DEFAULT_DASHBOARD_SETTINGS.copy()
+
+
+def ensure_dashboard_settings(settings):
+    merged = default_dashboard_settings()
+    merged.update(settings or {})
     return merged
 
 
@@ -211,6 +235,13 @@ def dashboard_panel_style(appearance):
         shadows.append(f"0 0 {int(appearance['glow_blur'])}px {int(appearance['glow_intensity'])}px {color_with_opacity(appearance['glow_color'], min(1, appearance['glow_intensity'] / 30))}")
     border = "none" if not appearance["border_enabled"] else f"{int(appearance['border_thickness'])}px solid {color_with_opacity(appearance['border_color'], appearance['border_opacity'])}"
     return {"border": border, "borderRadius": f"{int(appearance['border_radius'])}px", "boxShadow": ", ".join(shadows) if shadows else "none"}
+
+
+def dashboard_title_style(settings):
+    settings = ensure_dashboard_settings(settings)
+    fonts = {"Default": "inherit", "Arial": "Arial", "Helvetica": "Helvetica", "Verdana": "Verdana", "Georgia": "Georgia", "Times New Roman": "'Times New Roman'", "Courier New": "'Courier New'"}
+    weights = {"Normal": 400, "Medium": 500, "Bold": 700}
+    return {"color": settings["title_color"], "fontFamily": fonts.get(settings["title_font"], "inherit"), "fontSize": f"{int(settings['title_size'])}px", "fontWeight": weights.get(settings["title_weight"], 700), "textAlign": settings["title_alignment"].lower(), "paddingTop": f"{int(settings['title_top_spacing'])}px", "paddingBottom": f"{int(settings['title_bottom_spacing'])}px", "paddingLeft": "12px", "paddingRight": "12px", "letterSpacing": f"{int(settings['title_letter_spacing'])}px", "lineHeight": float(settings["title_line_height"]), "overflowWrap": "anywhere"}
 
 
 def styling_palette(config, categories=None):
@@ -678,29 +709,20 @@ def apply_dashboard_panel_action(dashboard, panel_id, action):
     return None
 
 
-def consume_dashboard_panel_menu_events(dashboard):
-    """Translate streamlit-elements menu events into the existing panel mutations."""
-    actions = ["Edit", "Duplicate", "Delete", "Reset Size", "Reset Position"]
+def toggle_dashboard_panel_menu(panel_id, _event=None):
     open_menu = st.session_state.get("dashboard_open_menu_panel_id")
-    for panel in list(dashboard):
-        panel_id = str(panel.get("id"))
-        toggle_key = f"dashboard_menu_toggle_{panel_id}"
-        if toggle_key in st.session_state:
-            st.session_state.pop(toggle_key)
-            open_menu = None if open_menu == panel_id else panel_id
-        for action in actions:
-            action_key = f"dashboard_menu_{action.lower().replace(' ', '_')}_{panel_id}"
-            if action_key in st.session_state:
-                st.session_state.pop(action_key)
-                editor_config = apply_dashboard_panel_action(dashboard, panel_id, action)
-                if editor_config is not None:
-                    st.session_state.editor_config = editor_config
-                    st.session_state.dashboard_edit_panel_id = panel_id
-                    st.session_state.editor_revision = st.session_state.get("editor_revision", 0) + 1
-                open_menu = None
-                st.session_state.dashboard_open_menu_panel_id = open_menu
-                st.rerun()
-    st.session_state.dashboard_open_menu_panel_id = open_menu
+    st.session_state.dashboard_open_menu_panel_id = None if open_menu == panel_id else panel_id
+
+
+def handle_dashboard_panel_action(panel_id, action, _event=None):
+    """Run a contextual-menu action through the same panel mutation helpers."""
+    dashboard = st.session_state.dashboard_charts
+    editor_config = apply_dashboard_panel_action(dashboard, panel_id, action)
+    if editor_config is not None:
+        st.session_state.editor_config = editor_config
+        st.session_state.dashboard_edit_panel_id = panel_id
+        st.session_state.editor_revision = st.session_state.get("editor_revision", 0) + 1
+    st.session_state.dashboard_open_menu_panel_id = None
 
 
 def chart_png(chart):
@@ -712,22 +734,32 @@ def chart_png(chart):
         return None
 
 
-def build_dashboard_image(dashboard, df=None):
+def build_dashboard_image(dashboard, df=None, dashboard_settings=None):
     """Compose the configured panels, at their saved grid positions, into a real PNG."""
     scale = 140
     margin = 28
     row_height = 145
+    settings = ensure_dashboard_settings(dashboard_settings)
+    dashboard_title = settings["title"].strip() if settings["title_visible"] else ""
+    title_height = int(settings["title_size"] * settings["title_line_height"] + settings["title_top_spacing"] + settings["title_bottom_spacing"]) if dashboard_title else 0
+    panel_top = margin + title_height + 28
     max_row = max((panel_layout(panel).get("y", 0) + panel_layout(panel).get("height", DEFAULT_PANEL_HEIGHT) for panel in dashboard), default=DEFAULT_PANEL_HEIGHT)
-    image = Image.new("RGB", (DASHBOARD_COLUMNS * scale + margin * 2, max_row * row_height + 125), color=(234, 249, 255))
+    image = Image.new("RGB", (DASHBOARD_COLUMNS * scale + margin * 2, panel_top + max_row * row_height + margin), color=(234, 249, 255))
     draw = ImageDraw.Draw(image)
     try:
-        font_header = ImageFont.truetype("arial.ttf", 30); font_title = ImageFont.truetype("arial.ttf", 16); font_small = ImageFont.truetype("arial.ttf", 12)
+        title_font_name = "arialbd.ttf" if settings["title_weight"] == "Bold" else "arial.ttf"
+        font_header = ImageFont.truetype("arial.ttf", 30); font_dashboard = ImageFont.truetype(title_font_name, int(settings["title_size"])); font_title = ImageFont.truetype("arial.ttf", 16); font_small = ImageFont.truetype("arial.ttf", 12)
     except Exception:
-        font_header = font_title = font_small = ImageFont.load_default()
-    draw.text((margin, 28), "Omer's Dashboard", fill=(16, 34, 44), font=font_header)
+        font_header = font_dashboard = font_title = font_small = ImageFont.load_default()
+    if dashboard_title:
+        title_width = draw.textbbox((0, 0), dashboard_title, font=font_dashboard)[2]
+        title_x = margin if settings["title_alignment"] == "Left" else image.width / 2 - title_width / 2 if settings["title_alignment"] == "Center" else image.width - margin - title_width
+        title_y = margin + int(settings["title_top_spacing"])
+        title_color = valid_color(settings["title_color"], "#10222c").lstrip("#")
+        draw.text((title_x, title_y), dashboard_title, fill=tuple(int(title_color[index:index + 2], 16) for index in (0, 2, 4)), font=font_dashboard)
     for index, panel in enumerate(dashboard):
         layout = panel_layout(panel, index)
-        x0 = margin + layout["x"] * scale; y0 = 90 + layout["y"] * row_height
+        x0 = margin + layout["x"] * scale; y0 = panel_top + layout["y"] * row_height
         width = max(220, layout["width"] * scale - 12); height = max(170, layout["height"] * row_height - 12)
         config = panel_config(panel); styling = ensure_styling(config)
         draw.rounded_rectangle((x0, y0, x0 + width, y0 + height), radius=6, fill=tuple(int(styling["background_color"][i:i + 2], 16) for i in (1, 3, 5)), outline=(45, 59, 71), width=2)
@@ -859,6 +891,36 @@ def dashboard_appearance_controls():
             st.session_state.appearance_revision = revision + 1
             st.rerun()
     return appearance
+
+
+def dashboard_title_controls():
+    settings = st.session_state.dashboard_settings
+    revision = st.session_state.get("dashboard_title_revision", 0)
+    key = f"dashboard_title_{revision}"
+    with st.expander("Dashboard Title", expanded=False):
+        settings["title_visible"] = st.checkbox("Show dashboard title", value=settings["title_visible"], key=f"{key}_visible")
+        settings["title"] = st.text_input("Dashboard title", settings["title"], key=f"{key}_text")
+        if settings["title_visible"] and settings["title"].strip():
+            row = st.columns(3)
+            settings["title_size"] = row[0].slider("Font size", 16, 56, int(settings["title_size"]), key=f"{key}_size")
+            weights = ["Normal", "Medium", "Bold"]
+            settings["title_weight"] = row[1].selectbox("Font weight", weights, index=weights.index(settings["title_weight"]), key=f"{key}_weight")
+            fonts = ["Default", "Arial", "Helvetica", "Verdana", "Georgia", "Times New Roman", "Courier New"]
+            settings["title_font"] = row[2].selectbox("Font family", fonts, index=fonts.index(settings["title_font"]), key=f"{key}_font")
+            row = st.columns(3)
+            settings["title_color"] = color_input("Title color", settings["title_color"], f"{key}_color")
+            alignments = ["Left", "Center", "Right"]
+            settings["title_alignment"] = row[1].selectbox("Alignment", alignments, index=alignments.index(settings["title_alignment"]), key=f"{key}_alignment")
+            settings["title_letter_spacing"] = row[2].slider("Letter spacing", 0, 8, int(settings["title_letter_spacing"]), key=f"{key}_letter_spacing")
+            row = st.columns(3)
+            settings["title_top_spacing"] = row[0].slider("Top spacing", 0, 40, int(settings["title_top_spacing"]), key=f"{key}_top_spacing")
+            settings["title_bottom_spacing"] = row[1].slider("Bottom spacing", 0, 40, int(settings["title_bottom_spacing"]), key=f"{key}_bottom_spacing")
+            settings["title_line_height"] = row[2].slider("Line height", 0.9, 2.0, float(settings["title_line_height"]), 0.1, key=f"{key}_line_height")
+        if st.button("Reset Dashboard Title", key=f"{key}_reset"):
+            st.session_state.dashboard_settings = default_dashboard_settings()
+            st.session_state.dashboard_title_revision = revision + 1
+            st.rerun()
+    return settings
 
 
 def color_controls(df, field_types, config):
@@ -1088,7 +1150,7 @@ def metric_html(output):
     return f"<div style='box-sizing:border-box;height:100%;padding:12px;background:{card_background};color:{text_color};display:flex;flex-direction:column;overflow:hidden'><div style='{title_css}{line_css};flex:0 0 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>{output['title']}</div><div style='flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:0'><div style='font-size:clamp(28px,10vh,72px);font-weight:800;color:{number_color};line-height:1.1'>{output['value']}</div><small>{output.get('subtitle', '')}</small></div></div>"
 
 
-def render_dashboard_workspace(df, panels, appearance):
+def render_dashboard_workspace(df, panels, appearance, dashboard_settings):
     for index, panel in enumerate(panels):
         panel_layout(panel, index)
     layout = [
@@ -1097,21 +1159,25 @@ def render_dashboard_workspace(df, panels, appearance):
     ]
     with elements("dashboard_workspace"):
         with mui.Box(style=dashboard_workspace_style(appearance)):
-            with elements_dashboard.Grid(layout, cols={"lg": DASHBOARD_COLUMNS}, breakpoints={"lg": 1200}, rowHeight=120, width="100%", compactType=None, isResizable=True, isDraggable=True, draggableHandle=".panel-drag-handle", onLayoutChange=sync("dashboard_layout")):
-                for panel in panels:
-                    styling = ensure_styling(panel_config(panel))
-                    panel_layout_data = panel["layout"]
-                    panel_style = dashboard_panel_style(appearance)
-                    with mui.Paper(key=str(panel["id"]), elevation=0, style={"backgroundColor": styling["background_color"], "overflow": "hidden", "height": "100%", "minHeight": "0", "display": "flex", "flexDirection": "column", **panel_style}):
-                        panel_id = str(panel["id"])
-                        with mui.Box(style={"height": "34px", "minHeight": "34px", "display": "flex", "alignItems": "center", "position": "relative", "zIndex": 2}):
-                            html.div(panel.get("title", "Visualization"), className="panel-drag-handle", style={"height": "34px", "flex": "1 1 auto", "minWidth": "0", "padding": "8px 4px 8px 10px", "fontWeight": "700", "color": readable_text_color(styling["background_color"]), "overflow": "hidden", "textOverflow": "ellipsis", "whiteSpace": "nowrap"})
-                            mui.IconButton("⋮", aria_label="Panel actions", onClick=sync(f"dashboard_menu_toggle_{panel_id}"), size="small", style={"flex": "0 0 auto", "marginRight": "4px", "color": readable_text_color(styling["background_color"]), "cursor": "pointer"})
-                            if st.session_state.get("dashboard_open_menu_panel_id") == panel_id:
-                                with mui.Paper(elevation=8, style={"position": "absolute", "top": "31px", "right": "4px", "zIndex": 20, "minWidth": "156px", "padding": "4px", "backgroundColor": "#18232b", "borderRadius": "6px"}):
-                                    for action in ["Edit", "Duplicate", "Delete", "Reset Size", "Reset Position"]:
-                                        mui.Button(action, onClick=sync(f"dashboard_menu_{action.lower().replace(' ', '_')}_{panel_id}"), variant="text", fullWidth=True, style={"justifyContent": "flex-start", "color": "#f4fbfd" if action != "Delete" else "#ff9b9b", "textTransform": "none", "minHeight": "30px"})
-                        html.iframe(key=f"frame-{panel['id']}-{panel_layout_data['width']}-{panel_layout_data['height']}", srcDoc=visualization_html(df, panel), style={"display": "block", "position": "relative", "zIndex": 1, "width": "100%", "height": "calc(100% - 34px)", "minHeight": "0", "border": "0", "backgroundColor": styling["background_color"]})
+            settings = ensure_dashboard_settings(dashboard_settings)
+            if settings["title_visible"] and settings["title"].strip():
+                mui.Typography(settings["title"], component="div", style=dashboard_title_style(settings))
+            if panels:
+                with elements_dashboard.Grid(layout, cols={"lg": DASHBOARD_COLUMNS}, breakpoints={"lg": 1200}, rowHeight=120, width="100%", compactType=None, isResizable=True, isDraggable=True, draggableHandle=".panel-drag-handle", onLayoutChange=sync("dashboard_layout")):
+                    for panel in panels:
+                        styling = ensure_styling(panel_config(panel))
+                        panel_layout_data = panel["layout"]
+                        panel_style = dashboard_panel_style(appearance)
+                        with mui.Paper(key=str(panel["id"]), elevation=0, style={"backgroundColor": styling["background_color"], "overflow": "hidden", "height": "100%", "minHeight": "0", "display": "flex", "flexDirection": "column", **panel_style}):
+                            panel_id = str(panel["id"])
+                            with mui.Box(style={"height": "34px", "minHeight": "34px", "display": "flex", "alignItems": "center", "position": "relative", "zIndex": 2}):
+                                html.div(panel.get("title", "Visualization"), className="panel-drag-handle", style={"height": "34px", "flex": "1 1 auto", "minWidth": "0", "padding": "8px 4px 8px 10px", "fontWeight": "700", "color": readable_text_color(styling["background_color"]), "overflow": "hidden", "textOverflow": "ellipsis", "whiteSpace": "nowrap"})
+                                mui.IconButton("⋮", aria_label="Panel actions", onClick=partial(toggle_dashboard_panel_menu, panel_id), size="small", style={"flex": "0 0 auto", "marginRight": "4px", "color": readable_text_color(styling["background_color"]), "cursor": "pointer"})
+                                if st.session_state.get("dashboard_open_menu_panel_id") == panel_id:
+                                    with mui.Paper(elevation=8, style={"position": "absolute", "top": "31px", "right": "4px", "zIndex": 20, "minWidth": "156px", "padding": "4px", "backgroundColor": "#18232b", "borderRadius": "6px"}):
+                                        for action in ["Edit", "Duplicate", "Delete", "Reset Size", "Reset Position"]:
+                                            mui.Button(action, onClick=partial(handle_dashboard_panel_action, panel_id, action), variant="text", fullWidth=True, style={"justifyContent": "flex-start", "color": "#f4fbfd" if action != "Delete" else "#ff9b9b", "textTransform": "none", "minHeight": "30px"})
+                            html.iframe(key=f"frame-{panel['id']}-{panel_layout_data['width']}-{panel_layout_data['height']}", srcDoc=visualization_html(df, panel), style={"display": "block", "position": "relative", "zIndex": 1, "width": "100%", "height": "calc(100% - 34px)", "minHeight": "0", "border": "0", "backgroundColor": styling["background_color"]})
     if st.session_state.get("dashboard_layout"):
         update_dashboard_layout(panels, st.session_state.pop("dashboard_layout"))
 
@@ -1121,6 +1187,7 @@ def main():
     st.title("Omer's Lens")
     if "dashboard_charts" not in st.session_state: st.session_state.dashboard_charts = []
     if "dashboard_appearance" not in st.session_state: st.session_state.dashboard_appearance = default_dashboard_appearance()
+    if "dashboard_settings" not in st.session_state: st.session_state.dashboard_settings = default_dashboard_settings()
     if "editor_config" not in st.session_state: st.session_state.editor_config = None
     if "dashboard_edit_panel_id" not in st.session_state: st.session_state.dashboard_edit_panel_id = None
     uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
@@ -1164,7 +1231,6 @@ def main():
             st.info("This visualization needs compatible fields or contains no matching data.")
     st.divider(); st.subheader("Dashboard")
     panels = st.session_state.dashboard_charts
-    consume_dashboard_panel_menu_events(panels)
     for index, panel in enumerate(panels):
         panel_layout(panel, index)
     toolbar = st.columns([4, 1, 1, 1, 2])
@@ -1177,12 +1243,14 @@ def main():
         st.session_state.dashboard_export_ready = True
     if toolbar[4].button("Clear dashboard", key="dashboard_clear"):
         st.session_state.dashboard_charts = []; st.rerun()
+    dashboard_settings = dashboard_title_controls()
     appearance = dashboard_appearance_controls()
+    if panels or (dashboard_settings["title_visible"] and dashboard_settings["title"].strip()):
+        render_dashboard_workspace(df, panels, appearance, dashboard_settings)
     if panels:
-        render_dashboard_workspace(df, panels, appearance)
         st.caption("Drag panel headers to move panels. Drag panel edges or corners to resize.")
         if st.session_state.get("dashboard_export_ready"):
-            st.download_button("Download Dashboard as PNG", build_dashboard_image(panels, df), "omer-dashboard.png", "image/png", key="dashboard_export_download")
+            st.download_button("Download Dashboard as PNG", build_dashboard_image(panels, df, dashboard_settings), "omer-dashboard.png", "image/png", key="dashboard_export_download")
             st.session_state.dashboard_export_ready = False
     else:
         st.info("Add a visualization to start arranging your dashboard workspace.")

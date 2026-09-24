@@ -106,3 +106,17 @@ def test_contextual_panel_actions_target_only_the_selected_panel():
     assert duplicate["visualization_config"] == config
     assert duplicate["visualization_config"] is not dashboard[0]["visualization_config"]
     assert dashboard[1]["layout"] == {"x": 0, "y": 4, "width": app.DEFAULT_PANEL_WIDTH, "height": app.DEFAULT_PANEL_HEIGHT}
+
+
+def test_dashboard_title_settings_are_independent_and_styleable():
+    settings = app.default_dashboard_settings()
+    settings.update({"title": "Operations", "title_size": 36, "title_weight": "Medium", "title_alignment": "Center"})
+
+    style = app.dashboard_title_style(settings)
+    png = app.build_dashboard_image([], dashboard_settings=settings)
+
+    assert style["fontSize"] == "36px"
+    assert style["fontWeight"] == 500
+    assert style["textAlign"] == "center"
+    assert "visualization_config" not in settings
+    assert png.startswith(b"\x89PNG")
