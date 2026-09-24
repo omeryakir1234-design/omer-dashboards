@@ -71,6 +71,16 @@ DEFAULT_STYLING = {
     "kpi_mode": "Static",
     "kpi_apply_to": "KPI number",
     "kpi_thresholds": [],
+    "title_color": "#10222c",
+    "title_bold": False,
+    "title_size": 18,
+    "title_font": "Default",
+    "title_alignment": "Left",
+    "title_show_line": False,
+    "title_line_color": "#9bbdce",
+    "title_line_thickness": 1,
+    "title_top_spacing": 0,
+    "title_bottom_spacing": 10,
 }
 VIS_TYPES = ["Bar", "Line", "Area", "KPI / Metric", "Pie", "Heat Map", "Waffle", "Map", "Treemap", "Word Cloud"]
 AGGREGATIONS = ["Count", "Unique count", "Sum", "Average", "Min", "Max", "Median"]
@@ -125,7 +135,24 @@ def styling_palette(config, categories=None):
 def visualization_properties(chart, config):
     styling = ensure_styling(config)
     text_color = readable_text_color(styling["background_color"])
-    return chart.properties(background=styling["background_color"]).configure_axis(labelColor=text_color, titleColor=text_color, domainColor=text_color, tickColor=text_color).configure_legend(labelColor=text_color, titleColor=text_color)
+    title = {
+        "color": styling["title_color"],
+        "fontSize": int(styling["title_size"]),
+        "fontWeight": "bold" if styling["title_bold"] else "normal",
+        "anchor": {"Left": "start", "Center": "middle", "Right": "end"}.get(styling["title_alignment"], "start"),
+        "offset": int(styling["title_bottom_spacing"]),
+    }
+    if styling["title_font"] != "Default":
+        title["font"] = styling["title_font"]
+    title_text = config.get("title", "")
+    if styling["title_show_line"]:
+        title_params = alt.TitleParams(text=title_text, subtitle="━━━━━━━━━━━━━━━━━━━━━━━━", subtitleColor=styling["title_line_color"], subtitleFontSize=max(2, int(styling["title_line_thickness"]) * 2), subtitlePadding=max(1, int(styling["title_bottom_spacing"]) // 2))
+        styled = chart.properties(title=title_params)
+    else:
+        styled = chart.properties(title=alt.TitleParams(text=title_text))
+    styled = styled.properties(background=styling["background_color"], padding={"top": int(styling["title_top_spacing"])})
+    styled = styled.configure_title(**title)
+    return styled.configure_axis(labelColor=text_color, titleColor=text_color, domainColor=text_color, tickColor=text_color).configure_legend(labelColor=text_color, titleColor=text_color)
 
 
 def dashboard_chart_theme():
@@ -286,7 +313,7 @@ def build_metric(df, config):
             if minimum <= float(value) <= maximum:
                 number_color = valid_color(threshold.get("color"), number_color)
                 break
-    return {"value": formatted, "title": config.get("title", "Metric"), "subtitle": config.get("subtitle", ""), "color": number_color, "background": styling["background_color"], "apply_to": styling.get("kpi_apply_to", "KPI number")}
+    return {"value": formatted, "title": config.get("title", "Metric"), "subtitle": config.get("subtitle", ""), "color": number_color, "background": styling["background_color"], "apply_to": styling.get("kpi_apply_to", "KPI number"), "title_styling": deepcopy(styling)}
 
 
 def build_pie_chart(df, config):
@@ -555,7 +582,18 @@ def build_dashboard_image(dashboard, df=None):
         width = max(220, layout["width"] * scale - 12); height = max(170, layout["height"] * row_height - 12)
         config = panel.get("config", {}); styling = ensure_styling(config)
         draw.rounded_rectangle((x0, y0, x0 + width, y0 + height), radius=6, fill=tuple(int(styling["background_color"][i:i + 2], 16) for i in (1, 3, 5)), outline=(45, 59, 71), width=2)
-        draw.text((x0 + 12, y0 + 10), panel.get("title", panel.get("type", "Visualization")), fill=readable_text_color(styling["background_color"]), font=font_title)
+        title_text = panel.get("title", panel.get("type", "Visualization")); title_font = font_title
+        if styling.get("title_bold"):
+            try: title_font = ImageFont.truetype("arialbd.ttf", int(styling.get("title_size", 18)))
+            except Exception: title_font = font_title
+        title_width = draw.textbbox((0, 0), title_text, font=title_font)[2]
+        alignment = styling.get("title_alignment", "Left")
+        title_x = x0 + 12 if alignment == "Left" else x0 + width / 2 - title_width / 2 if alignment == "Center" else x0 + width - title_width - 12
+        title_y = y0 + 10 + int(styling.get("title_top_spacing", 0))
+        draw.text((title_x, title_y), title_text, fill=tuple(int(styling["title_color"][i:i + 2], 16) for i in (1, 3, 5)), font=title_font)
+        if styling.get("title_show_line"):
+            line_y = title_y + title_font.getbbox(title_text)[3] + max(2, int(styling.get("title_bottom_spacing", 10)) // 2)
+            draw.line((x0 + 12, line_y, x0 + width - 12, line_y), fill=tuple(int(styling["title_line_color"][i:i + 2], 16) for i in (1, 3, 5)), width=int(styling.get("title_line_thickness", 1)))
         output = render_visualization(df, config) if df is not None and config else None
         if isinstance(output, dict):
             color = output.get("color", styling["main_color"]); draw.text((x0 + 24, y0 + height // 2 - 20), output["value"], fill=tuple(int(color[i:i + 2], 16) for i in (1, 3, 5)), font=font_header); draw.text((x0 + 24, y0 + height // 2 + 22), output.get("subtitle", ""), fill=readable_text_color(styling["background_color"]), font=font_small)
@@ -664,6 +702,44 @@ def color_controls(df, field_types, config):
     return config
 
 
+def reset_title_styling(config):
+    styling = ensure_styling(config)
+    defaults = default_styling()
+    for key in ("title_color", "title_bold", "title_size", "title_font", "title_alignment", "title_show_line", "title_line_color", "title_line_thickness", "title_top_spacing", "title_bottom_spacing"):
+        styling[key] = defaults[key]
+    return config
+
+
+def title_controls(config):
+    styling = ensure_styling(config)
+    widget_key = f"{st.session_state.get('editor_revision', 0)}"
+    with st.expander("Title Styling", expanded=False):
+        first_row = st.columns(3, gap="medium")
+        with first_row[0]:
+            styling["title_color"] = color_input("Title Color", styling["title_color"], f"{widget_key}_title_color")
+            styling["title_bold"] = st.checkbox("Bold Title", value=styling["title_bold"], key=f"{widget_key}_title_bold")
+        with first_row[1]:
+            styling["title_size"] = st.slider("Title Size (px)", 10, 40, int(styling["title_size"]), key=f"{widget_key}_title_size")
+            fonts = ["Default", "Arial", "Helvetica", "Verdana", "Georgia", "Times New Roman", "Courier New"]
+            styling["title_font"] = st.selectbox("Title Font", fonts, index=fonts.index(styling["title_font"]) if styling["title_font"] in fonts else 0, key=f"{widget_key}_title_font")
+        with first_row[2]:
+            alignments = ["Left", "Center", "Right"]
+            styling["title_alignment"] = st.selectbox("Title Alignment", alignments, index=alignments.index(styling["title_alignment"]) if styling["title_alignment"] in alignments else 0, key=f"{widget_key}_title_alignment")
+            styling["title_top_spacing"] = st.number_input("Title Top Spacing (px)", 0, 30, int(styling["title_top_spacing"]), key=f"{widget_key}_title_top_spacing")
+            styling["title_bottom_spacing"] = st.number_input("Title Bottom Spacing (px)", 0, 40, int(styling["title_bottom_spacing"]), key=f"{widget_key}_title_bottom_spacing")
+        second_row = st.columns(3, gap="medium")
+        with second_row[0]:
+            styling["title_show_line"] = st.checkbox("Show Line Below Title", value=styling["title_show_line"], key=f"{widget_key}_title_show_line")
+        with second_row[1]:
+            styling["title_line_color"] = color_input("Line Color", styling["title_line_color"], f"{widget_key}_title_line_color")
+        with second_row[2]:
+            styling["title_line_thickness"] = st.slider("Line Thickness (px)", 1, 5, int(styling["title_line_thickness"]), key=f"{widget_key}_title_line_thickness")
+        if st.button("Reset Title Styling", key=f"{widget_key}_reset_title_styling"):
+            reset_title_styling(config)
+            st.rerun()
+    return config
+
+
 def editor_controls(df, field_types, config):
     types = field_types; all_fields = types["all"]; numeric = types["numeric"]; categorical = types["categorical"] + types["boolean"]; key = f"editor_{st.session_state.get('editor_revision', 0)}"
     label_for_type = {"kpi_metric": "KPI / Metric", "heat_map": "Heat Map", "word_cloud": "Word Cloud"}
@@ -733,7 +809,8 @@ def editor_controls(df, field_types, config):
         with details[1]: config["font_max"] = st.number_input("Maximum font size", 12, 140, int(config.get("font_max", 44)), key=f"font_max_{key}")
         with details[2]: config["word_spacing"] = st.number_input("Spacing", 8, 50, max(8, int(config.get("word_spacing", 18))), key=f"word_spacing_{key}")
         config["stop_words"] = st.text_input("Stop words", config.get("stop_words", ""), key=f"stops_{key}")
-    return color_controls(df, field_types, config)
+    config = color_controls(df, field_types, config)
+    return title_controls(config)
 
 
 def filter_controls(df, field_types):
@@ -752,11 +829,22 @@ def filter_controls(df, field_types):
 def visualization_html(df, panel):
     output = render_visualization(df, panel.get("config", {}))
     if isinstance(output, dict):
-        background = output.get("background", DEFAULT_BACKGROUND); color = output.get("color", "#54b8d5")
-        return f"<div style='height:100%;padding:30px 12px;text-align:center;background:{background};color:{readable_text_color(background)}'><div style='font-size:42px;font-weight:800;color:{color}'>{output['value']}</div><div>{output['title']}</div><small>{output.get('subtitle', '')}</small></div>"
+        return metric_html(output)
     if output is None:
         return "<div style='padding:40px;text-align:center;color:#5d7180'>Visualization unavailable</div>"
     return output.to_html(embed_options={"renderer": "svg"})
+
+
+def metric_html(output):
+    styling = output.get("title_styling") or default_styling()
+    background = output.get("background", DEFAULT_BACKGROUND)
+    number_color = output.get("color", "#54b8d5") if output.get("apply_to") in {"KPI number", "Both"} else readable_text_color(background)
+    card_background = output.get("color", "#54b8d5") if output.get("apply_to") in {"KPI background", "Both"} else background
+    text_color = readable_text_color(card_background)
+    fonts = {"Default": "inherit", "Arial": "Arial", "Helvetica": "Helvetica", "Verdana": "Verdana", "Georgia": "Georgia", "Times New Roman": "'Times New Roman'", "Courier New": "'Courier New'"}
+    title_css = f"color:{styling.get('title_color', '#10222c')};font-family:{fonts.get(styling.get('title_font', 'Default'), 'inherit')};font-size:{int(styling.get('title_size', 18))}px;font-weight:{'700' if styling.get('title_bold') else '400'};text-align:{styling.get('title_alignment', 'Left').lower()};padding-top:{int(styling.get('title_top_spacing', 0))}px;padding-bottom:{int(styling.get('title_bottom_spacing', 10))}px;"
+    line_css = f"border-bottom:{int(styling.get('title_line_thickness', 1))}px solid {styling.get('title_line_color', '#9bbdce')};" if styling.get("title_show_line") else ""
+    return f"<div style='height:100%;padding:12px;background:{card_background};color:{text_color}'><div style='{title_css}{line_css}'>{output['title']}</div><div style='text-align:center;padding-top:24px'><div style='font-size:42px;font-weight:800;color:{number_color}'>{output['value']}</div><small>{output.get('subtitle', '')}</small></div></div>"
 
 
 def render_dashboard_workspace(df, panels):
@@ -808,10 +896,7 @@ def main():
     with preview_slot.container(border=True):
         preview = render_visualization(df, config)
         if isinstance(preview, dict):
-            number_color = preview["color"] if preview.get("apply_to") in {"KPI number", "Both"} else readable_text_color(preview["background"])
-            card_background = preview["color"] if preview.get("apply_to") in {"KPI background", "Both"} else preview["background"]
-            text_color = readable_text_color(card_background)
-            st.markdown(f"<div style='background:{card_background};border:1px solid #9bbdce;border-radius:6px;padding:4rem 1rem;text-align:center;color:{text_color}'><div style='font-size:3rem;font-weight:800;color:{number_color}'>{preview['value']}</div><div style='font-size:1.2rem;color:{text_color}'>{preview['title']}</div><div style='color:{text_color};opacity:.78'>{preview['subtitle']}</div></div>", unsafe_allow_html=True)
+            st.markdown(metric_html(preview), unsafe_allow_html=True)
         elif preview is not None:
             st.altair_chart(preview, use_container_width=True)
         else:
