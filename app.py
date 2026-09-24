@@ -474,11 +474,29 @@ def build_chart(df, chart_type, selected_col, numeric_columns, categorical_colum
     return None
 
 
+def _sync_picker_to_hex(picker_key, hex_key):
+    color = valid_color(st.session_state.get(picker_key), DEFAULT_BACKGROUND)
+    st.session_state[hex_key] = color
+
+
+def _sync_hex_to_picker(picker_key, hex_key):
+    color = valid_color(st.session_state.get(hex_key), st.session_state.get(picker_key, DEFAULT_BACKGROUND))
+    st.session_state[picker_key] = color
+    st.session_state[hex_key] = color
+
+
 def color_input(label, value, key):
+    picker_key = f"picker_{key}"
+    hex_key = f"hex_{key}"
+    initial = valid_color(value, DEFAULT_BACKGROUND)
+    if picker_key not in st.session_state:
+        st.session_state[picker_key] = initial
+    if hex_key not in st.session_state:
+        st.session_state[hex_key] = initial
     columns = st.columns([1, 2])
-    picked = columns[0].color_picker(label, valid_color(value, DEFAULT_BACKGROUND), key=f"picker_{key}")
-    entered = columns[1].text_input("HEX", picked, key=f"hex_{key}")
-    return valid_color(entered, picked)
+    columns[0].color_picker(label, key=picker_key, on_change=_sync_picker_to_hex, args=(picker_key, hex_key))
+    columns[1].text_input("HEX", key=hex_key, on_change=_sync_hex_to_picker, args=(picker_key, hex_key))
+    return valid_color(st.session_state.get(hex_key), st.session_state.get(picker_key, initial))
 
 
 def color_controls(df, field_types, config):
