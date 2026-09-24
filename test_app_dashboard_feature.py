@@ -60,4 +60,5 @@ def test_dashboard_visualization_html_uses_a_responsive_vega_container():
     assert '"height": "container"' in rendered
     assert '"autosize": {"type": "fit", "contains": "padding", "resize": true}' in rendered
     assert "ResizeObserver" in rendered
+    assert "padding:0 12px 12px 0" in rendered
     assert config == original_config

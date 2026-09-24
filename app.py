@@ -847,7 +847,7 @@ def visualization_html(df, panel):
     spec_json = json.dumps(spec).replace("</", "<\\/")
     return f"""<!DOCTYPE html>
 <html><head>
-<style>html,body,#chart{{width:100%;height:100%;margin:0;overflow:hidden}}</style>
+<style>html,body{{width:100%;height:100%;margin:0;overflow:hidden}}#chart{{box-sizing:border-box;width:100%;height:100%;padding:0 12px 12px 0}}</style>
 <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
 <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
 <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
