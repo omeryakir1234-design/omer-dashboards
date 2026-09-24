@@ -682,7 +682,7 @@ def main():
     field_types = detect_fields(df)
     with st.expander("Dataset and fields", expanded=True):
         stats = st.columns(4); stats[0].metric("Rows", f"{len(df):,}"); stats[1].metric("Columns", len(df.columns)); stats[2].metric("Numeric", len(field_types["numeric"])); stats[3].metric("Datetime", len(field_types["datetime"]))
-        st.dataframe(df.head(10), use_container_width=True); st.caption("Fields: " + ", ".join(f"{field} ({'numeric' if field in field_types['numeric'] else 'datetime' if field in field_types['datetime'] else 'categorical'})" for field in df.columns))
+        st.dataframe(df, height=560, use_container_width=True); st.caption("Fields: " + ", ".join(f"{field} ({'numeric' if field in field_types['numeric'] else 'datetime' if field in field_types['datetime'] else 'categorical'})" for field in df.columns))
     base = st.session_state.editor_config or default_config("Bar", field_types)
     st.markdown("**Live preview**")
     preview_slot = st.empty()
