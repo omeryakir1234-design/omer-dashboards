@@ -837,7 +837,29 @@ def visualization_html(df, panel):
         return metric_html(output)
     if output is None:
         return "<div style='padding:40px;text-align:center;color:#5d7180'>Visualization unavailable</div>"
-    return output.to_html(embed_options={"renderer": "svg"})
+    # Dashboard charts live in an iframe whose dimensions change with the grid
+    # item.  Altair's normal HTML export preserves the fixed preview dimensions,
+    # so make this dashboard-only spec fit its iframe instead.
+    spec = output.to_dict()
+    spec["width"] = "container"
+    spec["height"] = "container"
+    spec["autosize"] = {"type": "fit", "contains": "padding", "resize": True}
+    spec_json = json.dumps(spec).replace("</", "<\\/")
+    return f"""<!DOCTYPE html>
+<html><head>
+<style>html,body,#chart{{width:100%;height:100%;margin:0;overflow:hidden}}</style>
+<script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+</head><body><div id="chart"></div><script>
+const host = document.getElementById("chart");
+const spec = {spec_json};
+let view;
+vegaEmbed(host, spec, {{renderer: "svg", actions: false}}).then(result => {{
+  view = result.view;
+  new ResizeObserver(() => view.resize().runAsync()).observe(host);
+}});
+</script></body></html>"""
 
 
 def metric_html(output):
@@ -849,7 +871,7 @@ def metric_html(output):
     fonts = {"Default": "inherit", "Arial": "Arial", "Helvetica": "Helvetica", "Verdana": "Verdana", "Georgia": "Georgia", "Times New Roman": "'Times New Roman'", "Courier New": "'Courier New'"}
     title_css = f"color:{styling.get('title_color', '#10222c')};font-family:{fonts.get(styling.get('title_font', 'Default'), 'inherit')};font-size:{int(styling.get('title_size', 18))}px;font-weight:{'700' if styling.get('title_bold') else '400'};text-align:{styling.get('title_alignment', 'Left').lower()};padding-top:{int(styling.get('title_top_spacing', 0))}px;padding-bottom:{int(styling.get('title_bottom_spacing', 10))}px;"
     line_css = f"border-bottom:{int(styling.get('title_line_thickness', 1))}px solid {styling.get('title_line_color', '#9bbdce')};" if styling.get("title_show_line") else ""
-    return f"<div style='height:100%;padding:12px;background:{card_background};color:{text_color}'><div style='{title_css}{line_css}'>{output['title']}</div><div style='text-align:center;padding-top:24px'><div style='font-size:42px;font-weight:800;color:{number_color}'>{output['value']}</div><small>{output.get('subtitle', '')}</small></div></div>"
+    return f"<div style='box-sizing:border-box;height:100%;padding:12px;background:{card_background};color:{text_color};display:flex;flex-direction:column;overflow:hidden'><div style='{title_css}{line_css};flex:0 0 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>{output['title']}</div><div style='flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:0'><div style='font-size:clamp(28px,10vh,72px);font-weight:800;color:{number_color};line-height:1.1'>{output['value']}</div><small>{output.get('subtitle', '')}</small></div></div>"
 
 
 def render_dashboard_workspace(df, panels):
@@ -863,9 +885,10 @@ def render_dashboard_workspace(df, panels):
         with elements_dashboard.Grid(layout, cols={"lg": DASHBOARD_COLUMNS}, breakpoints={"lg": 1200}, rowHeight=120, width="100%", compactType=None, isResizable=True, isDraggable=True, draggableHandle=".panel-drag-handle", onLayoutChange=sync("dashboard_layout")):
             for panel in panels:
                 styling = ensure_styling(panel_config(panel))
-                with mui.Paper(key=str(panel["id"]), elevation=2, style={"backgroundColor": styling["background_color"], "border": "1px solid #2d3b47", "borderRadius": "6px", "overflow": "hidden", "height": "100%", "minHeight": "320px", "display": "flex", "flexDirection": "column"}):
+                layout = panel["layout"]
+                with mui.Paper(key=str(panel["id"]), elevation=2, style={"backgroundColor": styling["background_color"], "border": "1px solid #2d3b47", "borderRadius": "6px", "overflow": "hidden", "height": "100%", "minHeight": "0", "display": "flex", "flexDirection": "column"}):
                     html.div(panel.get("title", "Visualization"), className="panel-drag-handle", style={"height": "34px", "minHeight": "34px", "padding": "8px 10px", "fontWeight": "700", "color": readable_text_color(styling["background_color"])})
-                    html.iframe(srcDoc=visualization_html(df, panel), style={"display": "block", "width": "100%", "height": "calc(100% - 34px)", "minHeight": "286px", "border": "0", "backgroundColor": styling["background_color"]})
+                    html.iframe(key=f"frame-{panel['id']}-{layout['width']}-{layout['height']}", srcDoc=visualization_html(df, panel), style={"display": "block", "width": "100%", "height": "calc(100% - 34px)", "minHeight": "0", "border": "0", "backgroundColor": styling["background_color"]})
     if st.session_state.get("dashboard_layout"):
         update_dashboard_layout(panels, st.session_state.pop("dashboard_layout"))
 

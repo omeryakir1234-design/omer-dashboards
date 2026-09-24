@@ -1,5 +1,6 @@
 import pandas as pd
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -45,3 +46,18 @@ def test_build_dashboard_image_returns_png_bytes():
     png = app.build_dashboard_image(dashboard)
 
     assert png.startswith(b"\x89PNG")
+
+
+def test_dashboard_visualization_html_uses_a_responsive_vega_container():
+    df = pd.DataFrame({"category": ["A", "B"], "value": [1, 2]})
+    config = app.default_config("Bar", app.detect_fields(df))
+    original_config = deepcopy(config)
+    panel = {"visualization_config": config}
+
+    rendered = app.visualization_html(df, panel)
+
+    assert '"width": "container"' in rendered
+    assert '"height": "container"' in rendered
+    assert '"autosize": {"type": "fit", "contains": "padding", "resize": true}' in rendered
+    assert "ResizeObserver" in rendered
+    assert config == original_config
