@@ -510,7 +510,12 @@ def render_visualization(df, config):
 def add_chart_to_dashboard(dashboard, chart, chart_type, config=None, title=None):
     if config is None: return dashboard + [{"type": chart_type, "chart": chart}]
     panel_id = uuid4().hex
-    return dashboard + [{"id": panel_id, "type": config.get("type", chart_type), "title": title or config.get("title", chart_type), "config": deepcopy(config), "layout": {"x": 0, "y": next_panel_y(dashboard), "width": DEFAULT_PANEL_WIDTH, "height": DEFAULT_PANEL_HEIGHT}}]
+    return dashboard + [{"id": panel_id, "type": config.get("type", chart_type), "title": title or config.get("title", chart_type), "visualization_config": deepcopy(config), "layout": {"x": 0, "y": next_panel_y(dashboard), "width": DEFAULT_PANEL_WIDTH, "height": DEFAULT_PANEL_HEIGHT}}]
+
+
+def panel_config(panel):
+    """Read the canonical visualization config while supporting older saved panels."""
+    return panel.get("visualization_config") or panel.get("config") or {}
 
 
 def next_panel_y(dashboard):
@@ -580,7 +585,7 @@ def build_dashboard_image(dashboard, df=None):
         layout = panel_layout(panel, index)
         x0 = margin + layout["x"] * scale; y0 = 90 + layout["y"] * row_height
         width = max(220, layout["width"] * scale - 12); height = max(170, layout["height"] * row_height - 12)
-        config = panel.get("config", {}); styling = ensure_styling(config)
+        config = panel_config(panel); styling = ensure_styling(config)
         draw.rounded_rectangle((x0, y0, x0 + width, y0 + height), radius=6, fill=tuple(int(styling["background_color"][i:i + 2], 16) for i in (1, 3, 5)), outline=(45, 59, 71), width=2)
         title_text = panel.get("title", panel.get("type", "Visualization")); title_font = font_title
         if styling.get("title_bold"):
@@ -827,7 +832,7 @@ def filter_controls(df, field_types):
 
 
 def visualization_html(df, panel):
-    output = render_visualization(df, panel.get("config", {}))
+    output = render_visualization(df, panel_config(panel))
     if isinstance(output, dict):
         return metric_html(output)
     if output is None:
@@ -855,12 +860,12 @@ def render_dashboard_workspace(df, panels):
         for panel in panels
     ]
     with elements("dashboard_workspace"):
-        with elements_dashboard.Grid(layout, cols=DASHBOARD_COLUMNS, rowHeight=120, width="100%", draggableHandle=".panel-drag-handle", onLayoutChange=sync("dashboard_layout")):
+        with elements_dashboard.Grid(layout, cols={"lg": DASHBOARD_COLUMNS}, breakpoints={"lg": 1200}, rowHeight=120, width="100%", compactType=None, isResizable=True, isDraggable=True, draggableHandle=".panel-drag-handle", onLayoutChange=sync("dashboard_layout")):
             for panel in panels:
-                styling = ensure_styling(panel.get("config", {}))
-                with html.div(key=str(panel["id"]), style={"background": styling["background_color"], "border": "1px solid #2d3b47", "borderRadius": "6px", "overflow": "hidden", "height": "100%"}):
-                    html.div(panel.get("title", "Visualization"), className="panel-drag-handle", style={"height": "30px", "padding": "7px 10px", "fontWeight": "700", "color": readable_text_color(styling["background_color"])})
-                    html.iframe(srcDoc=visualization_html(df, panel), style={"width": "100%", "height": "calc(100% - 30px)", "border": "0"})
+                styling = ensure_styling(panel_config(panel))
+                with mui.Paper(key=str(panel["id"]), elevation=2, style={"backgroundColor": styling["background_color"], "border": "1px solid #2d3b47", "borderRadius": "6px", "overflow": "hidden", "height": "100%", "minHeight": "320px", "display": "flex", "flexDirection": "column"}):
+                    html.div(panel.get("title", "Visualization"), className="panel-drag-handle", style={"height": "34px", "minHeight": "34px", "padding": "8px 10px", "fontWeight": "700", "color": readable_text_color(styling["background_color"])})
+                    html.iframe(srcDoc=visualization_html(df, panel), style={"display": "block", "width": "100%", "height": "calc(100% - 34px)", "minHeight": "286px", "border": "0", "backgroundColor": styling["background_color"]})
     if st.session_state.get("dashboard_layout"):
         update_dashboard_layout(panels, st.session_state.pop("dashboard_layout"))
 
@@ -921,10 +926,11 @@ def main():
         for index, panel in enumerate(panels):
             actions = st.columns([3, 1, 1, 1, 1, 1])
             actions[0].caption(f"P{index + 1:02d} · {panel.get('title', 'Visualization')} · {panel['layout']['width']}×{panel['layout']['height']}")
-            if actions[1].button("Edit", key=f"edit_{index}") and "config" in panel:
-                st.session_state.editor_config = deepcopy(panel["config"]); st.session_state.editor_revision = st.session_state.get("editor_revision", 0) + 1; st.rerun()
-            if actions[2].button("Duplicate", key=f"duplicate_{index}") and "config" in panel:
-                copy_panel = {**panel, "id": uuid4().hex, "title": panel.get("title", "Visualization") + " copy", "config": deepcopy(panel["config"]), "layout": deepcopy(panel["layout"])}
+            if actions[1].button("Edit", key=f"edit_{index}") and panel_config(panel):
+                st.session_state.editor_config = deepcopy(panel_config(panel)); st.session_state.editor_revision = st.session_state.get("editor_revision", 0) + 1; st.rerun()
+            if actions[2].button("Duplicate", key=f"duplicate_{index}") and panel_config(panel):
+                copy_panel = {**panel, "id": uuid4().hex, "title": panel.get("title", "Visualization") + " copy", "visualization_config": deepcopy(panel_config(panel)), "layout": deepcopy(panel["layout"])}
+                copy_panel.pop("config", None)
                 copy_panel["layout"]["x"] = min(DASHBOARD_COLUMNS - copy_panel["layout"]["width"], copy_panel["layout"]["x"] + 1); copy_panel["layout"]["y"] += 1
                 st.session_state.dashboard_charts.insert(index + 1, copy_panel); st.rerun()
             if actions[3].button("Delete", key=f"delete_{index}"):
