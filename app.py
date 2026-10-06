@@ -5,6 +5,7 @@ from functools import partial
 import json
 import math
 from uuid import uuid4
+from pathlib import Path
 
 import altair as alt
 import pandas as pd
@@ -42,6 +43,10 @@ st.markdown(
     div.stButton > button { height:38px; border:1px solid var(--blue); border-radius:4px; background:var(--blue); color:#ffffff !important; font-weight:800; }
     div.stButton > button:hover { background:var(--deep); color:#ffffff !important; }
     div.stButton > button p, div.stButton > button span { color:#ffffff !important; }
+    .saved-dashboard-card { background:rgba(25,35,43,.9); border:1px solid rgba(84,184,213,.5); border-radius:8px; padding:0.7rem 0.75rem; margin-bottom:0.6rem; }
+    .saved-dashboard-card.active { border-color:#80d8d1; box-shadow:0 0 0 1px rgba(128,216,209,.5); }
+    .saved-dashboard-meta { color:#aab7c4; font-size:.75rem; }
+    .saved-dashboard-actions button { font-size:.74rem; height:29px; padding:0 0.6rem; }
     section[data-testid="stSidebar"] { background:#17232b; border-right:1px solid var(--line); }
     [data-testid="stMetric"] { background:var(--panel); border:1px solid var(--line); border-radius:6px; }
     .lens-kicker { color:#2789aa; font-size:.76rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
@@ -137,6 +142,100 @@ DEFAULT_DASHBOARD_SETTINGS = {
     "title_letter_spacing": 0,
     "title_line_height": 1.2,
 }
+
+CSV_CACHE_DIR = Path(__file__).resolve().parent / "saved_csv_cache"
+
+
+def saved_dashboards_file_path():
+    return Path(__file__).resolve().parent / "saved_dashboards.json"
+
+
+def load_saved_dashboards():
+    path = saved_dashboards_file_path()
+    if not path.exists():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle) or {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if isinstance(payload, dict):
+        return payload
+    return {}
+
+
+def persist_saved_dashboard(record):
+    data = load_saved_dashboards()
+    dashboard_id = str(record.get("id") or uuid4().hex)
+    record["id"] = dashboard_id
+    data[dashboard_id] = record
+    path = saved_dashboards_file_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2, sort_keys=True)
+    return dashboard_id
+
+
+def build_saved_dashboard_record(dashboard_id, name, source_csv_path, source_csv_name, dashboard_charts, appearance, settings, created_at=None, updated_at=None):
+    now = __import__("datetime").datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    dashboard_id = str(dashboard_id or uuid4().hex)
+    source_path = str(source_csv_path) if source_csv_path else ""
+    source_name = str(source_csv_name) if source_csv_name else (Path(source_path).name if source_path else "")
+    return {
+        "id": dashboard_id,
+        "name": str(name or "Untitled dashboard").strip() or "Untitled dashboard",
+        "created_at": created_at or now,
+        "updated_at": updated_at or now,
+        "source_csv_path": source_path,
+        "source_csv_name": source_name,
+        "dashboard": {
+            "charts": deepcopy(dashboard_charts or []),
+            "appearance": ensure_dashboard_appearance(appearance),
+            "settings": ensure_dashboard_settings(settings),
+        },
+    }
+
+
+def saved_dashboard_can_open(record):
+    source_path = (record or {}).get("source_csv_path")
+    if not source_path:
+        return False
+    return Path(source_path).exists()
+
+
+def saved_dashboard_error_message(record):
+    source_name = (record or {}).get("source_csv_name") or (Path((record or {}).get("source_csv_path") or "").name if (record or {}).get("source_csv_path") else "unknown.csv")
+    source_path = (record or {}).get("source_csv_path") or "(not available)"
+    return f"Cannot open this dashboard because its source CSV file is missing: {source_name} ({source_path})."
+
+
+def cache_uploaded_csv(uploaded_file):
+    if uploaded_file is None:
+        return None, None
+    name = getattr(uploaded_file, "name", "") or "uploaded.csv"
+    safe_name = str(name).replace("\\", "_").replace("/", "_")
+    CSV_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_path = CSV_CACHE_DIR / f"{uuid4().hex}_{safe_name}"
+    with cache_path.open("wb") as handle:
+        handle.write(uploaded_file.getvalue())
+    return str(cache_path.resolve()), name
+
+
+def apply_saved_dashboard_to_session(record):
+    dashboard = (record or {}).get("dashboard") or {}
+    st.session_state.current_saved_dashboard_id = record.get("id")
+    st.session_state.current_csv_path = record.get("source_csv_path")
+    st.session_state.current_csv_name = record.get("source_csv_name") or (Path(record.get("source_csv_path") or "").name if record.get("source_csv_path") else "")
+    st.session_state.dashboard_charts = deepcopy(dashboard.get("charts") or [])
+    st.session_state.dashboard_appearance = ensure_dashboard_appearance(dashboard.get("appearance"))
+    st.session_state.dashboard_settings = ensure_dashboard_settings(dashboard.get("settings"))
+    st.session_state.dashboard_unsaved_changes = False
+    st.session_state.dashboard_load_error = None
+    return st.session_state.dashboard_charts
+
+
+def mark_dashboard_dirty():
+    st.session_state.dashboard_unsaved_changes = True
 
 
 def default_styling():
@@ -674,6 +773,8 @@ def update_dashboard_layout(dashboard, layout_items):
         if item:
             panel["layout"] = {"x": item.get("x", 0), "y": item.get("y", 0), "width": item.get("w", DEFAULT_PANEL_WIDTH), "height": item.get("h", DEFAULT_PANEL_HEIGHT)}
         panel_layout(panel, index)
+    if dashboard:
+        mark_dashboard_dirty()
     return dashboard
 
 
@@ -1182,6 +1283,115 @@ def render_dashboard_workspace(df, panels, appearance, dashboard_settings):
         update_dashboard_layout(panels, st.session_state.pop("dashboard_layout"))
 
 
+def render_saved_dashboards_panel():
+    if "dashboard_unsaved_changes" not in st.session_state:
+        st.session_state.dashboard_unsaved_changes = False
+    if "current_saved_dashboard_id" not in st.session_state:
+        st.session_state.current_saved_dashboard_id = None
+    if "save_dashboard_name" not in st.session_state:
+        st.session_state.save_dashboard_name = ""
+    st.markdown('<div class="lens-kicker">Saved dashboards</div>', unsafe_allow_html=True)
+    saved = load_saved_dashboards()
+    if saved:
+        for dashboard_id, record in sorted(saved.items(), key=lambda entry: entry[1].get("updated_at", ""), reverse=True):
+            is_selected = str(st.session_state.get("current_saved_dashboard_id")) == str(dashboard_id)
+            with st.container():
+                st.markdown(f"<div class='saved-dashboard-card {'active' if is_selected else ''}'>", unsafe_allow_html=True)
+                st.markdown(f"**{record.get('name', 'Untitled dashboard')}**")
+                if record.get("source_csv_name"):
+                    st.caption(f"CSV: {record.get('source_csv_name')}")
+                if record.get("updated_at"):
+                    st.caption(f"Updated: {record.get('updated_at', '').replace('T', ' ').replace('Z', '')}")
+                actions = st.columns([1, 1, 1])
+                if actions[0].button("Open", key=f"open_saved_{dashboard_id}", use_container_width=True):
+                    if saved_dashboard_can_open(record):
+                        apply_saved_dashboard_to_session(record)
+                        st.session_state.dashboard_load_error = None
+                        st.session_state.save_dashboard_name = record.get("name", "")
+                        st.rerun()
+                    else:
+                        st.session_state.current_saved_dashboard_id = dashboard_id
+                        st.session_state.dashboard_load_error = saved_dashboard_error_message(record)
+                        st.session_state.current_csv_path = record.get("source_csv_path")
+                        st.session_state.current_csv_name = record.get("source_csv_name")
+                        st.rerun()
+                if actions[1].button("Dup", key=f"duplicate_saved_{dashboard_id}", use_container_width=True):
+                    duplicate_record = deepcopy(record)
+                    original_name = duplicate_record.get("name", "Dashboard")
+                    duplicate_record["id"] = uuid4().hex
+                    duplicate_record["name"] = f"{original_name} copy"
+                    duplicate_record["created_at"] = __import__("datetime").datetime.utcnow().isoformat(timespec="seconds") + "Z"
+                    duplicate_record["updated_at"] = duplicate_record["created_at"]
+                    persist_saved_dashboard(duplicate_record)
+                    st.session_state.current_saved_dashboard_id = duplicate_record["id"]
+                    st.session_state.save_dashboard_name = duplicate_record["name"]
+                    st.rerun()
+                if actions[2].button("Del", key=f"delete_saved_{dashboard_id}", use_container_width=True):
+                    if st.session_state.get("delete_confirm_id") == dashboard_id:
+                        saved_data = load_saved_dashboards(); saved_data.pop(dashboard_id, None)
+                        path = saved_dashboards_file_path(); path.parent.mkdir(parents=True, exist_ok=True)
+                        with path.open("w", encoding="utf-8") as handle:
+                            json.dump(saved_data, handle, indent=2, sort_keys=True)
+                        if str(st.session_state.get("current_saved_dashboard_id")) == str(dashboard_id):
+                            st.session_state.current_saved_dashboard_id = None
+                            st.session_state.dashboard_charts = []
+                            st.session_state.dashboard_appearance = default_dashboard_appearance()
+                            st.session_state.dashboard_settings = default_dashboard_settings()
+                            st.session_state.dashboard_unsaved_changes = False
+                            st.session_state.dashboard_load_error = None
+                        st.session_state.delete_confirm_id = None
+                        st.rerun()
+                    else:
+                        st.session_state.delete_confirm_id = dashboard_id
+                        st.warning("Press Delete again to confirm the removal.")
+                st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        st.info("No saved dashboards yet.")
+    st.caption("Current state")
+    if st.session_state.get("current_saved_dashboard_id"):
+        label = "Saved dashboard loaded"
+        if st.session_state.get("dashboard_unsaved_changes"):
+            label = "Saved dashboard has unsaved changes"
+        st.caption(label)
+    elif st.session_state.get("dashboard_unsaved_changes"):
+        st.caption("New dashboard has unsaved changes")
+    else:
+        st.caption("New dashboard")
+    st.text_input("Dashboard name", key="save_dashboard_name", help="Use this for saving a new dashboard or renaming the current one before saving.")
+    if st.button("Save", key="save_dashboard_button", use_container_width=True):
+        if st.session_state.get("dashboard_layout"):
+            update_dashboard_layout(st.session_state.dashboard_charts, st.session_state.pop("dashboard_layout"))
+        target_name = str(st.session_state.get("save_dashboard_name") or "").strip()
+        if not target_name:
+            st.warning("Choose a dashboard name before saving.")
+        else:
+            source_csv_path = st.session_state.get("current_csv_path")
+            source_csv_name = st.session_state.get("current_csv_name") or (Path(source_csv_path).name if source_csv_path else "")
+            if source_csv_path and not Path(source_csv_path).exists():
+                st.error(saved_dashboard_error_message({"source_csv_path": source_csv_path, "source_csv_name": source_csv_name}))
+            else:
+                dashboard_id = st.session_state.get("current_saved_dashboard_id")
+                now = __import__("datetime").datetime.utcnow().isoformat(timespec="seconds") + "Z"
+                existing = load_saved_dashboards().get(dashboard_id) if dashboard_id else None
+                record = build_saved_dashboard_record(
+                    dashboard_id=dashboard_id or uuid4().hex,
+                    name=target_name,
+                    source_csv_path=source_csv_path or "",
+                    source_csv_name=source_csv_name,
+                    dashboard_charts=st.session_state.get("dashboard_charts", []),
+                    appearance=st.session_state.get("dashboard_appearance", default_dashboard_appearance()),
+                    settings=st.session_state.get("dashboard_settings", default_dashboard_settings()),
+                    created_at=(existing or {}).get("created_at") if existing else None,
+                    updated_at=now,
+                )
+                persist_saved_dashboard(record)
+                st.session_state.current_saved_dashboard_id = record["id"]
+                st.session_state.dashboard_unsaved_changes = False
+                st.session_state.save_dashboard_name = record["name"]
+                st.success(f"Saved dashboard '{record['name']}'")
+                st.rerun()
+
+
 def main():
     st.markdown('<div class="lens-kicker">CSV analytics workspace</div>', unsafe_allow_html=True)
     st.title("Omer Dashboards")
@@ -1190,70 +1400,144 @@ def main():
     if "dashboard_settings" not in st.session_state: st.session_state.dashboard_settings = default_dashboard_settings()
     if "editor_config" not in st.session_state: st.session_state.editor_config = None
     if "dashboard_edit_panel_id" not in st.session_state: st.session_state.dashboard_edit_panel_id = None
-    uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
-    if uploaded_file is None:
-        st.markdown('<div class="empty-canvas">Upload a CSV to begin building visualizations.</div>', unsafe_allow_html=True)
-        return
-    try: df = pd.read_csv(uploaded_file)
-    except Exception as error: st.error(f"Could not read this CSV: {error}"); return
-    if df.empty: st.warning("This dataset is empty."); return
-    field_types = detect_fields(df)
-    with st.expander("Dataset and fields", expanded=True):
-        stats = st.columns(4); stats[0].metric("Rows", f"{len(df):,}"); stats[1].metric("Columns", len(df.columns)); stats[2].metric("Numeric", len(field_types["numeric"])); stats[3].metric("Datetime", len(field_types["datetime"]))
-        st.dataframe(df, height=560, use_container_width=True); st.caption("Fields: " + ", ".join(f"{field} ({'numeric' if field in field_types['numeric'] else 'datetime' if field in field_types['datetime'] else 'categorical'})" for field in df.columns))
-    base = st.session_state.editor_config or default_config("Bar", field_types)
-    st.markdown("**Live preview**")
-    preview_slot = st.empty()
-    with preview_slot.container(border=True):
-        st.info("Preview updates as you configure the visualization below.")
-    st.markdown('<div class="builder-section">Configure Visualization</div>', unsafe_allow_html=True)
-    with st.container(border=True):
-        config = editor_controls(df, field_types, base)
-        st.markdown('<div class="builder-section">Filters</div>', unsafe_allow_html=True)
-        config["filters"] = filter_controls(df, field_types)
-        edit_index = dashboard_panel_index(st.session_state.dashboard_charts, st.session_state.dashboard_edit_panel_id)
-        if st.button("Update Dashboard" if edit_index is not None else "Add to Dashboard", type="primary", use_container_width=True):
-            if edit_index is None:
-                st.session_state.dashboard_charts = add_chart_to_dashboard(st.session_state.dashboard_charts, None, config["type"], config, config.get("title")); st.success("Visualization added.")
+    if "current_csv_path" not in st.session_state: st.session_state.current_csv_path = None
+    if "current_csv_name" not in st.session_state: st.session_state.current_csv_name = ""
+    if "current_saved_dashboard_id" not in st.session_state: st.session_state.current_saved_dashboard_id = None
+    if "dashboard_unsaved_changes" not in st.session_state: st.session_state.dashboard_unsaved_changes = False
+    if "dashboard_load_error" not in st.session_state: st.session_state.dashboard_load_error = None
+    if "save_dashboard_name" not in st.session_state: st.session_state.save_dashboard_name = ""
+
+    left_panel, right_panel = st.columns([7, 2.8], gap="large")
+
+    with left_panel:
+        uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
+        missing_csv_error = st.session_state.get("dashboard_load_error")
+        if missing_csv_error:
+            st.error(missing_csv_error)
+        df = None
+        if uploaded_file is not None:
+            st.session_state.current_saved_dashboard_id = None
+            st.session_state.dashboard_load_error = None
+            cache_path, original_name = cache_uploaded_csv(uploaded_file)
+            st.session_state.current_csv_path = cache_path
+            st.session_state.current_csv_name = original_name
+            try:
+                df = pd.read_csv(cache_path)
+            except Exception as error:
+                st.error(f"Could not read this CSV: {error}")
+                df = None
+            st.session_state.dashboard_unsaved_changes = True
+        elif st.session_state.get("current_saved_dashboard_id") and st.session_state.get("current_csv_path") and Path(st.session_state.current_csv_path).exists():
+            try:
+                df = pd.read_csv(st.session_state.current_csv_path)
+            except Exception as error:
+                st.error(f"Could not read this CSV: {error}")
+                df = None
+        elif st.session_state.get("current_saved_dashboard_id") and st.session_state.get("current_csv_path") and not Path(st.session_state.current_csv_path).exists():
+            st.error(saved_dashboard_error_message({"source_csv_path": st.session_state.current_csv_path, "source_csv_name": st.session_state.current_csv_name}))
+            st.info("Select a different dashboard or upload a replacement CSV to continue editing.")
+            df = None
+        elif uploaded_file is None:
+            st.markdown('<div class="empty-canvas">Upload a CSV to begin building visualizations.</div>', unsafe_allow_html=True)
+            df = None
+
+        if df is not None:
+            if df.empty:
+                st.warning("This dataset is empty.")
             else:
-                panel = st.session_state.dashboard_charts[edit_index]
-                panel.update({"type": config["type"], "title": config.get("title", panel.get("title", "Visualization")), "visualization_config": deepcopy(config)})
-                panel.pop("config", None)
-                st.session_state.dashboard_edit_panel_id = None
-                st.success("Visualization updated.")
-    with preview_slot.container(border=True):
-        preview = render_visualization(df, config)
-        if isinstance(preview, dict):
-            st.markdown(metric_html(preview), unsafe_allow_html=True)
-        elif preview is not None:
-            st.altair_chart(preview, use_container_width=True)
-        else:
-            st.info("This visualization needs compatible fields or contains no matching data.")
-    st.divider(); st.subheader("Dashboard")
-    panels = st.session_state.dashboard_charts
-    for index, panel in enumerate(panels):
-        panel_layout(panel, index)
-    toolbar = st.columns([4, 1, 1, 1, 2])
-    toolbar[0].markdown(f"**Analytics workspace** · {len(panels)} panels")
-    if toolbar[1].button("+ Add visualization", key="dashboard_add_visualization"):
-        st.session_state.editor_config = default_config("Bar", field_types); st.session_state.dashboard_edit_panel_id = None; st.session_state.editor_revision = st.session_state.get("editor_revision", 0) + 1; st.rerun()
-    if toolbar[2].button("Reset layout", key="dashboard_reset_layout"):
-        reset_dashboard_layout(panels); st.rerun()
-    if toolbar[3].button("Download PNG", key="dashboard_download_png"):
-        st.session_state.dashboard_export_ready = True
-    if toolbar[4].button("Clear dashboard", key="dashboard_clear"):
-        st.session_state.dashboard_charts = []; st.rerun()
-    dashboard_settings = dashboard_title_controls()
-    appearance = dashboard_appearance_controls()
-    if panels or (dashboard_settings["title_visible"] and dashboard_settings["title"].strip()):
-        render_dashboard_workspace(df, panels, appearance, dashboard_settings)
-    if panels:
-        st.caption("Drag panel headers to move panels. Drag panel edges or corners to resize.")
-        if st.session_state.get("dashboard_export_ready"):
-            st.download_button("Download Dashboard as PNG", build_dashboard_image(panels, df, dashboard_settings), "omer-dashboard.png", "image/png", key="dashboard_export_download")
-            st.session_state.dashboard_export_ready = False
-    else:
-        st.info("Add a visualization to start arranging your dashboard workspace.")
+                field_types = detect_fields(df)
+                with st.expander("Dataset and fields", expanded=True):
+                    stats = st.columns(4); stats[0].metric("Rows", f"{len(df):,}"); stats[1].metric("Columns", len(df.columns)); stats[2].metric("Numeric", len(field_types["numeric"])); stats[3].metric("Datetime", len(field_types["datetime"]))
+                    st.dataframe(df, height=560, use_container_width=True); st.caption("Fields: " + ", ".join(f"{field} ({'numeric' if field in field_types['numeric'] else 'datetime' if field in field_types['datetime'] else 'categorical'})" for field in df.columns))
+                base = st.session_state.editor_config or default_config("Bar", field_types)
+                st.markdown("**Live preview**")
+                preview_slot = st.empty()
+                with preview_slot.container(border=True):
+                    st.info("Preview updates as you configure the visualization below.")
+                st.markdown('<div class="builder-section">Configure Visualization</div>', unsafe_allow_html=True)
+                with st.container(border=True):
+                    config = editor_controls(df, field_types, base)
+                    st.markdown('<div class="builder-section">Filters</div>', unsafe_allow_html=True)
+                    config["filters"] = filter_controls(df, field_types)
+                    edit_index = dashboard_panel_index(st.session_state.dashboard_charts, st.session_state.dashboard_edit_panel_id)
+                    if st.button("Update Dashboard" if edit_index is not None else "Add to Dashboard", type="primary", use_container_width=True):
+                        if edit_index is None:
+                            st.session_state.dashboard_charts = add_chart_to_dashboard(st.session_state.dashboard_charts, None, config["type"], config, config.get("title")); mark_dashboard_dirty(); st.success("Visualization added.")
+                        else:
+                            panel = st.session_state.dashboard_charts[edit_index]
+                            panel.update({"type": config["type"], "title": config.get("title", panel.get("title", "Visualization")), "visualization_config": deepcopy(config)})
+                            panel.pop("config", None)
+                            st.session_state.dashboard_edit_panel_id = None
+                            mark_dashboard_dirty(); st.success("Visualization updated.")
+                with preview_slot.container(border=True):
+                    preview = render_visualization(df, config)
+                    if isinstance(preview, dict):
+                        st.markdown(metric_html(preview), unsafe_allow_html=True)
+                    elif preview is not None:
+                        st.altair_chart(preview, use_container_width=True)
+                    else:
+                        st.info("This visualization needs compatible fields or contains no matching data.")
+                st.divider(); st.subheader("Dashboard")
+                panels = st.session_state.dashboard_charts
+                for index, panel in enumerate(panels):
+                    panel_layout(panel, index)
+                toolbar = st.columns([4, 1, 1, 1, 2])
+                toolbar[0].markdown(f"**Analytics workspace** · {len(panels)} panels")
+                if toolbar[1].button("+ Add visualization", key="dashboard_add_visualization"):
+                    st.session_state.editor_config = default_config("Bar", field_types); st.session_state.dashboard_edit_panel_id = None; st.session_state.editor_revision = st.session_state.get("editor_revision", 0) + 1; st.rerun()
+                if toolbar[2].button("Reset layout", key="dashboard_reset_layout"):
+                    reset_dashboard_layout(panels); mark_dashboard_dirty(); st.rerun()
+                if toolbar[3].button("Download PNG", key="dashboard_download_png"):
+                    st.session_state.dashboard_export_ready = True
+                if toolbar[4].button("Clear dashboard", key="dashboard_clear"):
+                    st.session_state.dashboard_charts = []; mark_dashboard_dirty(); st.rerun()
+                dashboard_settings = dashboard_title_controls()
+                appearance = dashboard_appearance_controls()
+                if panels or (dashboard_settings["title_visible"] and dashboard_settings["title"].strip()):
+                    render_dashboard_workspace(df, panels, appearance, dashboard_settings)
+                if panels:
+                    st.caption("Drag panel headers to move panels. Drag panel edges or corners to resize.")
+                    save_row = st.columns([1, 1])
+                    with save_row[1]:
+                        if st.button("Save", key="save_dashboard_button", help="Save the current dashboard state", use_container_width=False):
+                            if st.session_state.get("dashboard_layout"):
+                                update_dashboard_layout(st.session_state.dashboard_charts, st.session_state.pop("dashboard_layout"))
+                            target_name = str(st.session_state.get("save_dashboard_name") or "").strip()
+                            if not target_name:
+                                st.warning("Choose a dashboard name before saving.")
+                            else:
+                                source_csv_path = st.session_state.get("current_csv_path")
+                                source_csv_name = st.session_state.get("current_csv_name") or (Path(source_csv_path).name if source_csv_path else "")
+                                if source_csv_path and not Path(source_csv_path).exists():
+                                    st.error(saved_dashboard_error_message({"source_csv_path": source_csv_path, "source_csv_name": source_csv_name}))
+                                else:
+                                    dashboard_id = st.session_state.get("current_saved_dashboard_id")
+                                    existing = load_saved_dashboards().get(dashboard_id) if dashboard_id else None
+                                    record = build_saved_dashboard_record(
+                                        dashboard_id=dashboard_id or uuid4().hex,
+                                        name=target_name,
+                                        source_csv_path=source_csv_path or "",
+                                        source_csv_name=source_csv_name,
+                                        dashboard_charts=st.session_state.get("dashboard_charts", []),
+                                        appearance=st.session_state.get("dashboard_appearance", default_dashboard_appearance()),
+                                        settings=st.session_state.get("dashboard_settings", default_dashboard_settings()),
+                                        created_at=(existing or {}).get("created_at") if existing else None,
+                                        updated_at=__import__("datetime").datetime.utcnow().isoformat(timespec="seconds") + "Z",
+                                    )
+                                    persist_saved_dashboard(record)
+                                    st.session_state.current_saved_dashboard_id = record["id"]
+                                    st.session_state.dashboard_unsaved_changes = False
+                                    st.session_state.save_dashboard_name = record["name"]
+                                    st.success(f"Saved dashboard '{record['name']}'")
+                                    st.rerun()
+                    if st.session_state.get("dashboard_export_ready"):
+                        st.download_button("Download Dashboard as PNG", build_dashboard_image(panels, df, dashboard_settings), "omer-dashboard.png", "image/png", key="dashboard_export_download")
+                        st.session_state.dashboard_export_ready = False
+                else:
+                    st.info("Add a visualization to start arranging your dashboard workspace.")
+
+    with right_panel:
+        render_saved_dashboards_panel()
 
 
 if __name__ == "__main__":

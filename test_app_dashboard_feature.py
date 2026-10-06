@@ -120,3 +120,37 @@ def test_dashboard_title_settings_are_independent_and_styleable():
     assert style["textAlign"] == "center"
     assert "visualization_config" not in settings
     assert png.startswith(b"\x89PNG")
+
+
+def test_persisted_dashboard_record_round_trip(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "saved_dashboards_file_path", lambda: tmp_path / "saved_dashboards.json")
+    dashboard = [{"id": "panel-1", "title": "Chart", "visualization_config": {"type": "bar", "title": "Chart"}, "layout": {"x": 0, "y": 0, "width": 6, "height": 4}}]
+    record = app.build_saved_dashboard_record(
+        dashboard_id="dash-123",
+        name="Dashboard A",
+        source_csv_path="/tmp/source.csv",
+        source_csv_name="source.csv",
+        dashboard_charts=dashboard,
+        appearance=app.default_dashboard_appearance(),
+        settings=app.default_dashboard_settings(),
+    )
+
+    app.persist_saved_dashboard(record)
+    saved = app.load_saved_dashboards()
+
+    assert saved["dash-123"]["name"] == "Dashboard A"
+    assert saved["dash-123"]["source_csv_path"] == "/tmp/source.csv"
+    assert saved["dash-123"]["dashboard"]["charts"][0]["id"] == "panel-1"
+
+
+def test_missing_csv_dashboard_refuses_to_open(tmp_path):
+    missing_csv = tmp_path / "missing.csv"
+    record = {
+        "id": "dash-404",
+        "name": "Missing CSV Dashboard",
+        "source_csv_path": str(missing_csv),
+        "source_csv_name": "missing.csv",
+    }
+
+    assert app.saved_dashboard_can_open(record) is False
+    assert "missing" in app.saved_dashboard_error_message(record).lower()
