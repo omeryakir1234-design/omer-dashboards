@@ -154,3 +154,10 @@ def test_missing_csv_dashboard_refuses_to_open(tmp_path):
 
     assert app.saved_dashboard_can_open(record) is False
     assert "missing" in app.saved_dashboard_error_message(record).lower()
+
+
+def test_saved_dashboard_save_widget_key_is_unique():
+    app_source = Path(app.__file__).read_text(encoding="utf-8")
+
+    assert app_source.count('key="save_dashboard_button"') == 1
+    assert app_source.count('st.button("Save"') == 1

@@ -1283,6 +1283,39 @@ def render_dashboard_workspace(df, panels, appearance, dashboard_settings):
         update_dashboard_layout(panels, st.session_state.pop("dashboard_layout"))
 
 
+def save_current_dashboard():
+    if st.session_state.get("dashboard_layout"):
+        update_dashboard_layout(st.session_state.dashboard_charts, st.session_state.pop("dashboard_layout"))
+    target_name = str(st.session_state.get("save_dashboard_name") or "").strip()
+    if not target_name:
+        st.warning("Choose a dashboard name before saving.")
+        return
+    source_csv_path = st.session_state.get("current_csv_path")
+    source_csv_name = st.session_state.get("current_csv_name") or (Path(source_csv_path).name if source_csv_path else "")
+    if source_csv_path and not Path(source_csv_path).exists():
+        st.error(saved_dashboard_error_message({"source_csv_path": source_csv_path, "source_csv_name": source_csv_name}))
+        return
+    dashboard_id = st.session_state.get("current_saved_dashboard_id")
+    existing = load_saved_dashboards().get(dashboard_id) if dashboard_id else None
+    record = build_saved_dashboard_record(
+        dashboard_id=dashboard_id or uuid4().hex,
+        name=target_name,
+        source_csv_path=source_csv_path or "",
+        source_csv_name=source_csv_name,
+        dashboard_charts=st.session_state.get("dashboard_charts", []),
+        appearance=st.session_state.get("dashboard_appearance", default_dashboard_appearance()),
+        settings=st.session_state.get("dashboard_settings", default_dashboard_settings()),
+        created_at=(existing or {}).get("created_at") if existing else None,
+        updated_at=__import__("datetime").datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    )
+    persist_saved_dashboard(record)
+    st.session_state.current_saved_dashboard_id = record["id"]
+    st.session_state.dashboard_unsaved_changes = False
+    st.session_state.save_dashboard_name = record["name"]
+    st.success(f"Saved dashboard '{record['name']}'")
+    st.rerun()
+
+
 def render_saved_dashboards_panel():
     if "dashboard_unsaved_changes" not in st.session_state:
         st.session_state.dashboard_unsaved_changes = False
@@ -1359,37 +1392,7 @@ def render_saved_dashboards_panel():
         st.caption("New dashboard")
     st.text_input("Dashboard name", key="save_dashboard_name", help="Use this for saving a new dashboard or renaming the current one before saving.")
     if st.button("Save", key="save_dashboard_button", use_container_width=True):
-        if st.session_state.get("dashboard_layout"):
-            update_dashboard_layout(st.session_state.dashboard_charts, st.session_state.pop("dashboard_layout"))
-        target_name = str(st.session_state.get("save_dashboard_name") or "").strip()
-        if not target_name:
-            st.warning("Choose a dashboard name before saving.")
-        else:
-            source_csv_path = st.session_state.get("current_csv_path")
-            source_csv_name = st.session_state.get("current_csv_name") or (Path(source_csv_path).name if source_csv_path else "")
-            if source_csv_path and not Path(source_csv_path).exists():
-                st.error(saved_dashboard_error_message({"source_csv_path": source_csv_path, "source_csv_name": source_csv_name}))
-            else:
-                dashboard_id = st.session_state.get("current_saved_dashboard_id")
-                now = __import__("datetime").datetime.utcnow().isoformat(timespec="seconds") + "Z"
-                existing = load_saved_dashboards().get(dashboard_id) if dashboard_id else None
-                record = build_saved_dashboard_record(
-                    dashboard_id=dashboard_id or uuid4().hex,
-                    name=target_name,
-                    source_csv_path=source_csv_path or "",
-                    source_csv_name=source_csv_name,
-                    dashboard_charts=st.session_state.get("dashboard_charts", []),
-                    appearance=st.session_state.get("dashboard_appearance", default_dashboard_appearance()),
-                    settings=st.session_state.get("dashboard_settings", default_dashboard_settings()),
-                    created_at=(existing or {}).get("created_at") if existing else None,
-                    updated_at=now,
-                )
-                persist_saved_dashboard(record)
-                st.session_state.current_saved_dashboard_id = record["id"]
-                st.session_state.dashboard_unsaved_changes = False
-                st.session_state.save_dashboard_name = record["name"]
-                st.success(f"Saved dashboard '{record['name']}'")
-                st.rerun()
+        save_current_dashboard()
 
 
 def main():
@@ -1497,39 +1500,6 @@ def main():
                     render_dashboard_workspace(df, panels, appearance, dashboard_settings)
                 if panels:
                     st.caption("Drag panel headers to move panels. Drag panel edges or corners to resize.")
-                    save_row = st.columns([1, 1])
-                    with save_row[1]:
-                        if st.button("Save", key="save_dashboard_button", help="Save the current dashboard state", use_container_width=False):
-                            if st.session_state.get("dashboard_layout"):
-                                update_dashboard_layout(st.session_state.dashboard_charts, st.session_state.pop("dashboard_layout"))
-                            target_name = str(st.session_state.get("save_dashboard_name") or "").strip()
-                            if not target_name:
-                                st.warning("Choose a dashboard name before saving.")
-                            else:
-                                source_csv_path = st.session_state.get("current_csv_path")
-                                source_csv_name = st.session_state.get("current_csv_name") or (Path(source_csv_path).name if source_csv_path else "")
-                                if source_csv_path and not Path(source_csv_path).exists():
-                                    st.error(saved_dashboard_error_message({"source_csv_path": source_csv_path, "source_csv_name": source_csv_name}))
-                                else:
-                                    dashboard_id = st.session_state.get("current_saved_dashboard_id")
-                                    existing = load_saved_dashboards().get(dashboard_id) if dashboard_id else None
-                                    record = build_saved_dashboard_record(
-                                        dashboard_id=dashboard_id or uuid4().hex,
-                                        name=target_name,
-                                        source_csv_path=source_csv_path or "",
-                                        source_csv_name=source_csv_name,
-                                        dashboard_charts=st.session_state.get("dashboard_charts", []),
-                                        appearance=st.session_state.get("dashboard_appearance", default_dashboard_appearance()),
-                                        settings=st.session_state.get("dashboard_settings", default_dashboard_settings()),
-                                        created_at=(existing or {}).get("created_at") if existing else None,
-                                        updated_at=__import__("datetime").datetime.utcnow().isoformat(timespec="seconds") + "Z",
-                                    )
-                                    persist_saved_dashboard(record)
-                                    st.session_state.current_saved_dashboard_id = record["id"]
-                                    st.session_state.dashboard_unsaved_changes = False
-                                    st.session_state.save_dashboard_name = record["name"]
-                                    st.success(f"Saved dashboard '{record['name']}'")
-                                    st.rerun()
                     if st.session_state.get("dashboard_export_ready"):
                         st.download_button("Download Dashboard as PNG", build_dashboard_image(panels, df, dashboard_settings), "omer-dashboard.png", "image/png", key="dashboard_export_download")
                         st.session_state.dashboard_export_ready = False
