@@ -224,6 +224,7 @@ def cache_uploaded_csv(uploaded_file):
 def apply_saved_dashboard_to_session(record):
     dashboard = (record or {}).get("dashboard") or {}
     st.session_state.current_saved_dashboard_id = record.get("id")
+    st.session_state.current_dashboard_name = record.get("name") or ""
     st.session_state.current_csv_path = record.get("source_csv_path")
     st.session_state.current_csv_name = record.get("source_csv_name") or (Path(record.get("source_csv_path") or "").name if record.get("source_csv_path") else "")
     st.session_state.dashboard_charts = deepcopy(dashboard.get("charts") or [])
@@ -1286,7 +1287,7 @@ def render_dashboard_workspace(df, panels, appearance, dashboard_settings):
 def save_current_dashboard():
     if st.session_state.get("dashboard_layout"):
         update_dashboard_layout(st.session_state.dashboard_charts, st.session_state.pop("dashboard_layout"))
-    target_name = str(st.session_state.get("save_dashboard_name") or "").strip()
+    target_name = str(st.session_state.get("save_dashboard_name_input") or "").strip()
     if not target_name:
         st.warning("Choose a dashboard name before saving.")
         return
@@ -1310,8 +1311,8 @@ def save_current_dashboard():
     )
     persist_saved_dashboard(record)
     st.session_state.current_saved_dashboard_id = record["id"]
+    st.session_state.current_dashboard_name = record["name"]
     st.session_state.dashboard_unsaved_changes = False
-    st.session_state.save_dashboard_name = record["name"]
     st.success(f"Saved dashboard '{record['name']}'")
     st.rerun()
 
@@ -1321,8 +1322,15 @@ def render_saved_dashboards_panel():
         st.session_state.dashboard_unsaved_changes = False
     if "current_saved_dashboard_id" not in st.session_state:
         st.session_state.current_saved_dashboard_id = None
-    if "save_dashboard_name" not in st.session_state:
-        st.session_state.save_dashboard_name = ""
+    if "current_dashboard_name" not in st.session_state:
+        st.session_state.current_dashboard_name = ""
+    if "save_dashboard_name_input" not in st.session_state:
+        st.session_state.save_dashboard_name_input = ""
+    if "save_dashboard_name_input_source_id" not in st.session_state:
+        st.session_state.save_dashboard_name_input_source_id = None
+    if str(st.session_state.get("save_dashboard_name_input_source_id")) != str(st.session_state.get("current_saved_dashboard_id")):
+        st.session_state.save_dashboard_name_input = st.session_state.current_dashboard_name
+        st.session_state.save_dashboard_name_input_source_id = st.session_state.current_saved_dashboard_id
     st.markdown('<div class="lens-kicker">Saved dashboards</div>', unsafe_allow_html=True)
     saved = load_saved_dashboards()
     if saved:
@@ -1340,10 +1348,11 @@ def render_saved_dashboards_panel():
                     if saved_dashboard_can_open(record):
                         apply_saved_dashboard_to_session(record)
                         st.session_state.dashboard_load_error = None
-                        st.session_state.save_dashboard_name = record.get("name", "")
+                        st.session_state.current_dashboard_name = record.get("name", "")
                         st.rerun()
                     else:
                         st.session_state.current_saved_dashboard_id = dashboard_id
+                        st.session_state.current_dashboard_name = record.get("name", "")
                         st.session_state.dashboard_load_error = saved_dashboard_error_message(record)
                         st.session_state.current_csv_path = record.get("source_csv_path")
                         st.session_state.current_csv_name = record.get("source_csv_name")
@@ -1357,7 +1366,7 @@ def render_saved_dashboards_panel():
                     duplicate_record["updated_at"] = duplicate_record["created_at"]
                     persist_saved_dashboard(duplicate_record)
                     st.session_state.current_saved_dashboard_id = duplicate_record["id"]
-                    st.session_state.save_dashboard_name = duplicate_record["name"]
+                    st.session_state.current_dashboard_name = duplicate_record["name"]
                     st.rerun()
                 if actions[2].button("Del", key=f"delete_saved_{dashboard_id}", use_container_width=True):
                     if st.session_state.get("delete_confirm_id") == dashboard_id:
@@ -1367,6 +1376,7 @@ def render_saved_dashboards_panel():
                             json.dump(saved_data, handle, indent=2, sort_keys=True)
                         if str(st.session_state.get("current_saved_dashboard_id")) == str(dashboard_id):
                             st.session_state.current_saved_dashboard_id = None
+                            st.session_state.current_dashboard_name = ""
                             st.session_state.dashboard_charts = []
                             st.session_state.dashboard_appearance = default_dashboard_appearance()
                             st.session_state.dashboard_settings = default_dashboard_settings()
@@ -1390,7 +1400,12 @@ def render_saved_dashboards_panel():
         st.caption("New dashboard has unsaved changes")
     else:
         st.caption("New dashboard")
-    st.text_input("Dashboard name", key="save_dashboard_name", help="Use this for saving a new dashboard or renaming the current one before saving.")
+    st.text_input(
+        "Dashboard name",
+        key="save_dashboard_name_input",
+        value=st.session_state.get("current_dashboard_name", ""),
+        help="Use this for saving a new dashboard or renaming the current one before saving.",
+    )
     if st.button("Save", key="save_dashboard_button", use_container_width=True):
         save_current_dashboard()
 
@@ -1406,9 +1421,11 @@ def main():
     if "current_csv_path" not in st.session_state: st.session_state.current_csv_path = None
     if "current_csv_name" not in st.session_state: st.session_state.current_csv_name = ""
     if "current_saved_dashboard_id" not in st.session_state: st.session_state.current_saved_dashboard_id = None
+    if "current_dashboard_name" not in st.session_state: st.session_state.current_dashboard_name = ""
     if "dashboard_unsaved_changes" not in st.session_state: st.session_state.dashboard_unsaved_changes = False
     if "dashboard_load_error" not in st.session_state: st.session_state.dashboard_load_error = None
-    if "save_dashboard_name" not in st.session_state: st.session_state.save_dashboard_name = ""
+    if "save_dashboard_name_input" not in st.session_state: st.session_state.save_dashboard_name_input = ""
+    if "save_dashboard_name_input_source_id" not in st.session_state: st.session_state.save_dashboard_name_input_source_id = None
 
     left_panel, right_panel = st.columns([7, 2.8], gap="large")
 
@@ -1420,6 +1437,9 @@ def main():
         df = None
         if uploaded_file is not None:
             st.session_state.current_saved_dashboard_id = None
+            st.session_state.current_dashboard_name = ""
+            st.session_state.save_dashboard_name_input = ""
+            st.session_state.save_dashboard_name_input_source_id = None
             st.session_state.dashboard_load_error = None
             cache_path, original_name = cache_uploaded_csv(uploaded_file)
             st.session_state.current_csv_path = cache_path
