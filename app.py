@@ -15,7 +15,7 @@ from streamlit_elements import elements, html, mui, sync
 import vl_convert as vlc
 
 
-st.set_page_config(page_title="Omer's Lens", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Omer Dashboards", page_icon="📊", layout="wide")
 
 st.markdown(
     """
@@ -1184,7 +1184,7 @@ def render_dashboard_workspace(df, panels, appearance, dashboard_settings):
 
 def main():
     st.markdown('<div class="lens-kicker">CSV analytics workspace</div>', unsafe_allow_html=True)
-    st.title("Omer's Lens")
+    st.title("Omer Dashboards")
     if "dashboard_charts" not in st.session_state: st.session_state.dashboard_charts = []
     if "dashboard_appearance" not in st.session_state: st.session_state.dashboard_appearance = default_dashboard_appearance()
     if "dashboard_settings" not in st.session_state: st.session_state.dashboard_settings = default_dashboard_settings()
