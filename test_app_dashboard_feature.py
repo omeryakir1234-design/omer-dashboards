@@ -156,6 +156,39 @@ def test_missing_csv_dashboard_refuses_to_open(tmp_path):
     assert "missing" in app.saved_dashboard_error_message(record).lower()
 
 
+def test_loading_saved_dashboard_clears_stale_grid_layout():
+    app.st.session_state.clear()
+    app.st.session_state.dashboard_layout = [{"i": "old", "x": 0, "y": 0, "w": 1, "h": 1}]
+    record = {
+        "id": "dash-layout",
+        "name": "Layout dashboard",
+        "source_csv_path": "data.csv",
+        "source_csv_name": "data.csv",
+        "dashboard": {"charts": [], "appearance": app.default_dashboard_appearance(), "settings": app.default_dashboard_settings()},
+    }
+
+    app.apply_saved_dashboard_to_session(record)
+
+    assert app.st.session_state.dashboard_layout is None
+    assert app.st.session_state.current_saved_dashboard_id == "dash-layout"
+
+
+def test_dashboard_panel_background_opacity_is_applied():
+    appearance = app.default_dashboard_appearance()
+    appearance["panel_background_opacity"] = 0.6
+    style = app.dashboard_panel_style(appearance)
+
+    assert style["backgroundColor"] == "rgba(217, 237, 249, 0.600)"
+
+
+def test_dashboard_resize_handle_is_larger_than_default():
+    app_source = Path(app.__file__).read_text(encoding="utf-8")
+
+    assert ".react-resizable-handle" in app_source
+    assert "width:44px !important" in app_source
+    assert "height:44px !important" in app_source
+
+
 def test_saved_dashboard_widget_state_is_separated():
     app_source = Path(app.__file__).read_text(encoding="utf-8")
 

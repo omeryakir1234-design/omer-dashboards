@@ -47,6 +47,8 @@ st.markdown(
     .saved-dashboard-card.active { border-color:#80d8d1; box-shadow:0 0 0 1px rgba(128,216,209,.5); }
     .saved-dashboard-meta { color:#aab7c4; font-size:.75rem; }
     .saved-dashboard-actions button { font-size:.74rem; height:29px; padding:0 0.6rem; }
+    .react-resizable-handle { right:-10px !important; bottom:-10px !important; width:44px !important; height:44px !important; z-index:10 !important; }
+    .react-resizable-handle::after { content:""; position:absolute; right:12px; bottom:12px; width:16px; height:16px; border-right:3px solid rgba(84,184,213,.9); border-bottom:3px solid rgba(84,184,213,.9); border-radius:2px; }
     section[data-testid="stSidebar"] { background:#17232b; border-right:1px solid var(--line); }
     [data-testid="stMetric"] { background:var(--panel); border:1px solid var(--line); border-radius:6px; }
     .lens-kicker { color:#2789aa; font-size:.76rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
@@ -128,6 +130,7 @@ DEFAULT_DASHBOARD_APPEARANCE = {
     "border_opacity": 1.0,
     "border_thickness": 1,
     "border_radius": 6,
+    "panel_background_opacity": 1.0,
 }
 DEFAULT_DASHBOARD_SETTINGS = {
     "title": "",
@@ -227,6 +230,7 @@ def apply_saved_dashboard_to_session(record):
     st.session_state.current_dashboard_name = record.get("name") or ""
     st.session_state.current_csv_path = record.get("source_csv_path")
     st.session_state.current_csv_name = record.get("source_csv_name") or (Path(record.get("source_csv_path") or "").name if record.get("source_csv_path") else "")
+    st.session_state.dashboard_layout = None
     st.session_state.dashboard_charts = deepcopy(dashboard.get("charts") or [])
     st.session_state.dashboard_appearance = ensure_dashboard_appearance(dashboard.get("appearance"))
     st.session_state.dashboard_settings = ensure_dashboard_settings(dashboard.get("settings"))
@@ -334,7 +338,12 @@ def dashboard_panel_style(appearance):
     if appearance["glow_enabled"]:
         shadows.append(f"0 0 {int(appearance['glow_blur'])}px {int(appearance['glow_intensity'])}px {color_with_opacity(appearance['glow_color'], min(1, appearance['glow_intensity'] / 30))}")
     border = "none" if not appearance["border_enabled"] else f"{int(appearance['border_thickness'])}px solid {color_with_opacity(appearance['border_color'], appearance['border_opacity'])}"
-    return {"border": border, "borderRadius": f"{int(appearance['border_radius'])}px", "boxShadow": ", ".join(shadows) if shadows else "none"}
+    return {
+        "backgroundColor": color_with_opacity(appearance.get("background_color", DEFAULT_BACKGROUND), float(appearance.get("panel_background_opacity", 1.0))),
+        "border": border,
+        "borderRadius": f"{int(appearance['border_radius'])}px",
+        "boxShadow": ", ".join(shadows) if shadows else "none",
+    }
 
 
 def dashboard_title_style(settings):
@@ -988,6 +997,7 @@ def dashboard_appearance_controls():
             appearance["border_thickness"] = columns[0].slider("Border thickness", 1, 6, int(appearance["border_thickness"]), key=f"{key}_border_thickness")
             appearance["border_opacity"] = columns[1].slider("Border opacity", 0.0, 1.0, float(appearance["border_opacity"]), 0.05, key=f"{key}_border_opacity")
         appearance["border_radius"] = st.slider("Panel corner radius", 0, 32, int(appearance["border_radius"]), key=f"{key}_radius")
+        appearance["panel_background_opacity"] = st.slider("Panel background opacity", 0, 100, int(float(appearance.get("panel_background_opacity", 1.0)) * 100), 1, key=f"{key}_panel_background_opacity") / 100.0
         if st.button("Reset Dashboard Appearance", key=f"{key}_reset"):
             st.session_state.dashboard_appearance = default_dashboard_appearance()
             st.session_state.appearance_revision = revision + 1
@@ -1377,6 +1387,7 @@ def render_saved_dashboards_panel():
                         if str(st.session_state.get("current_saved_dashboard_id")) == str(dashboard_id):
                             st.session_state.current_saved_dashboard_id = None
                             st.session_state.current_dashboard_name = ""
+                            st.session_state.dashboard_layout = None
                             st.session_state.dashboard_charts = []
                             st.session_state.dashboard_appearance = default_dashboard_appearance()
                             st.session_state.dashboard_settings = default_dashboard_settings()
@@ -1440,6 +1451,7 @@ def main():
             st.session_state.current_dashboard_name = ""
             st.session_state.save_dashboard_name_input = ""
             st.session_state.save_dashboard_name_input_source_id = None
+            st.session_state.dashboard_layout = None
             st.session_state.dashboard_load_error = None
             cache_path, original_name = cache_uploaded_csv(uploaded_file)
             st.session_state.current_csv_path = cache_path
