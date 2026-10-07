@@ -1336,11 +1336,6 @@ def render_saved_dashboards_panel():
         st.session_state.current_dashboard_name = ""
     if "save_dashboard_name_input" not in st.session_state:
         st.session_state.save_dashboard_name_input = ""
-    if "save_dashboard_name_input_source_id" not in st.session_state:
-        st.session_state.save_dashboard_name_input_source_id = None
-    if str(st.session_state.get("save_dashboard_name_input_source_id")) != str(st.session_state.get("current_saved_dashboard_id")):
-        st.session_state.save_dashboard_name_input = st.session_state.current_dashboard_name
-        st.session_state.save_dashboard_name_input_source_id = st.session_state.current_saved_dashboard_id
     st.markdown('<div class="lens-kicker">Saved dashboards</div>', unsafe_allow_html=True)
     saved = load_saved_dashboards()
     if saved:
@@ -1436,7 +1431,6 @@ def main():
     if "dashboard_unsaved_changes" not in st.session_state: st.session_state.dashboard_unsaved_changes = False
     if "dashboard_load_error" not in st.session_state: st.session_state.dashboard_load_error = None
     if "save_dashboard_name_input" not in st.session_state: st.session_state.save_dashboard_name_input = ""
-    if "save_dashboard_name_input_source_id" not in st.session_state: st.session_state.save_dashboard_name_input_source_id = None
 
     left_panel, right_panel = st.columns([7, 2.8], gap="large")
 
@@ -1450,7 +1444,6 @@ def main():
             st.session_state.current_saved_dashboard_id = None
             st.session_state.current_dashboard_name = ""
             st.session_state.save_dashboard_name_input = ""
-            st.session_state.save_dashboard_name_input_source_id = None
             st.session_state.dashboard_layout = None
             st.session_state.dashboard_load_error = None
             cache_path, original_name = cache_uploaded_csv(uploaded_file)

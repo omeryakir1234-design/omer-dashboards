@@ -3,6 +3,8 @@ import sys
 from copy import deepcopy
 from pathlib import Path
 
+from streamlit.testing.v1 import AppTest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import app
@@ -154,6 +156,35 @@ def test_missing_csv_dashboard_refuses_to_open(tmp_path):
 
     assert app.saved_dashboard_can_open(record) is False
     assert "missing" in app.saved_dashboard_error_message(record).lower()
+
+
+def test_save_uses_the_current_name_input_and_keeps_it_after_save(tmp_path, monkeypatch):
+    saved_path = tmp_path / "saved_dashboards.json"
+    monkeypatch.setattr(app, "saved_dashboards_file_path", lambda: saved_path)
+    csv_path = tmp_path / "data.csv"
+    csv_path.write_text("value\n1\n2\n", encoding="utf-8")
+
+    at = app.st.testing.AppTest.from_file(str(Path(__file__).resolve().parent / "app.py"))
+    at.session_state["current_csv_path"] = str(csv_path)
+    at.session_state["current_csv_name"] = csv_path.name
+    at.session_state["dashboard_charts"] = [{
+        "id": "panel-1",
+        "title": "Saved panel",
+        "type": "Bar",
+        "visualization_config": {"type": "bar", "title": "Saved panel", "styling": app.default_styling()},
+        "layout": {"x": 0, "y": 0, "width": 6, "height": 4},
+    }]
+    at.session_state["dashboard_appearance"] = app.default_dashboard_appearance()
+    at.session_state["dashboard_settings"] = app.default_dashboard_settings()
+    at.session_state["dashboard_unsaved_changes"] = True
+    at.text_input["Dashboard name"].input("Test Dashboard").run()
+    at.button["Save"].click().run()
+
+    assert at.session_state["current_dashboard_name"] == "Test Dashboard"
+    assert at.text_input["Dashboard name"].value == "Test Dashboard"
+    assert saved_path.exists()
+    saved = app.load_saved_dashboards()
+    assert any(record["name"] == "Test Dashboard" for record in saved.values())
 
 
 def test_loading_saved_dashboard_clears_stale_grid_layout():
