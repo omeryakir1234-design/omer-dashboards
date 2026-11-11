@@ -231,6 +231,38 @@ def test_dashboard_panel_background_opacity_is_applied():
     assert style["backgroundColor"] == "rgba(217, 237, 249, 0.600)"
 
 
+def test_streamlit_elements_grid_has_required_xxs_breakpoint():
+    app_source = Path(app.__file__).read_text(encoding="utf-8")
+
+    assert 'cols={"xxs": DASHBOARD_COLUMNS, "lg": DASHBOARD_COLUMNS}' in app_source
+    assert 'breakpoints={"xxs": 0, "lg": 1200}' in app_source
+
+
+def test_loaded_dashboard_keeps_valid_saved_layout():
+    record = {
+        "id": "dash-visibility",
+        "name": "Saved panel",
+        "source_csv_path": str(Path(__file__).resolve().parent / "data.csv"),
+        "source_csv_name": "data.csv",
+        "dashboard": {
+            "charts": [{
+                "id": "panel-1",
+                "title": "Saved panel",
+                "type": "Bar",
+                "layout": {"x": 0, "y": 0, "width": 6, "height": 4},
+                "visualization_config": {"type": "bar", "title": "Saved panel", "styling": app.default_styling()},
+            }],
+            "appearance": app.default_dashboard_appearance(),
+            "settings": app.default_dashboard_settings(),
+        },
+    }
+
+    app.apply_saved_dashboard_to_session(record)
+
+    assert app.st.session_state.dashboard_charts[0]["title"] == "Saved panel"
+    assert app.st.session_state.dashboard_charts[0]["layout"]["width"] == 6
+
+
 def test_dashboard_resize_handle_is_larger_than_default():
     app_source = Path(app.__file__).read_text(encoding="utf-8")
 

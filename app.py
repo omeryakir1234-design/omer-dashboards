@@ -1311,7 +1311,20 @@ def render_dashboard_workspace(df, panels, appearance, dashboard_settings):
             if settings["title_visible"] and settings["title"].strip():
                 mui.Typography(settings["title"], component="div", style=dashboard_title_style(settings))
             if panels:
-                with elements_dashboard.Grid(layout, cols={"lg": DASHBOARD_COLUMNS}, breakpoints={"lg": 1200}, rowHeight=120, width="100%", compactType=None, isResizable=True, isDraggable=True, draggableHandle=".panel-drag-handle", onLayoutChange=sync("dashboard_layout")):
+                # Responsive Grid Layout needs a column count at every reachable
+                # breakpoint. The Elements frame is often narrower than 1200px.
+                with elements_dashboard.Grid(
+                    layout,
+                    cols={"xxs": DASHBOARD_COLUMNS, "lg": DASHBOARD_COLUMNS},
+                    breakpoints={"xxs": 0, "lg": 1200},
+                    rowHeight=120,
+                    width="100%",
+                    compactType=None,
+                    isResizable=True,
+                    isDraggable=True,
+                    draggableHandle=".panel-drag-handle",
+                    onLayoutChange=sync("dashboard_layout"),
+                ):
                     for panel in panels:
                         styling = ensure_styling(panel_config(panel))
                         panel_layout_data = panel["layout"]
