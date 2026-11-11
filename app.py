@@ -2,6 +2,7 @@ from io import BytesIO
 from copy import deepcopy
 from base64 import b64encode
 from functools import partial
+from hashlib import sha256
 import json
 import math
 from uuid import uuid4
@@ -224,10 +225,20 @@ def cache_uploaded_csv(uploaded_file):
     return str(cache_path.resolve()), name
 
 
+def uploaded_csv_fingerprint(uploaded_file):
+    """Return a stable identity for the currently selected CSV upload."""
+    if uploaded_file is None:
+        return None
+    name = str(getattr(uploaded_file, "name", "") or "uploaded.csv")
+    content = uploaded_file.getvalue()
+    return sha256(name.encode("utf-8") + b"\0" + content).hexdigest()
+
+
 def apply_saved_dashboard_to_session(record):
     dashboard = (record or {}).get("dashboard") or {}
     st.session_state.current_saved_dashboard_id = record.get("id")
     st.session_state.current_dashboard_name = record.get("name") or ""
+    st.session_state.save_dashboard_name_input = st.session_state.current_dashboard_name
     st.session_state.current_csv_path = record.get("source_csv_path")
     st.session_state.current_csv_name = record.get("source_csv_name") or (Path(record.get("source_csv_path") or "").name if record.get("source_csv_path") else "")
     st.session_state.dashboard_layout = None
@@ -1397,6 +1408,7 @@ def render_saved_dashboards_panel():
                     persist_saved_dashboard(duplicate_record)
                     st.session_state.current_saved_dashboard_id = duplicate_record["id"]
                     st.session_state.current_dashboard_name = duplicate_record["name"]
+                    st.session_state.save_dashboard_name_input = duplicate_record["name"]
                     st.rerun()
                 if actions[2].button("Del", key=f"delete_saved_{dashboard_id}", use_container_width=True):
                     if st.session_state.get("delete_confirm_id") == dashboard_id:
@@ -1407,6 +1419,7 @@ def render_saved_dashboards_panel():
                         if str(st.session_state.get("current_saved_dashboard_id")) == str(dashboard_id):
                             st.session_state.current_saved_dashboard_id = None
                             st.session_state.current_dashboard_name = ""
+                            st.session_state.save_dashboard_name_input = ""
                             st.session_state.dashboard_layout = None
                             st.session_state.dashboard_charts = []
                             st.session_state.dashboard_appearance = default_dashboard_appearance()
@@ -1434,7 +1447,6 @@ def render_saved_dashboards_panel():
     st.text_input(
         "Dashboard name",
         key="save_dashboard_name_input",
-        value=st.session_state.get("current_dashboard_name", ""),
         help="Use this for saving a new dashboard or renaming the current one before saving.",
     )
     if st.button("Save", key="save_dashboard_button", use_container_width=True):
@@ -1456,6 +1468,7 @@ def main():
     if "dashboard_unsaved_changes" not in st.session_state: st.session_state.dashboard_unsaved_changes = False
     if "dashboard_load_error" not in st.session_state: st.session_state.dashboard_load_error = None
     if "save_dashboard_name_input" not in st.session_state: st.session_state.save_dashboard_name_input = ""
+    if "processed_upload_fingerprint" not in st.session_state: st.session_state.processed_upload_fingerprint = None
 
     left_panel, right_panel = st.columns([7, 2.8], gap="large")
 
@@ -1465,21 +1478,28 @@ def main():
         if missing_csv_error:
             st.error(missing_csv_error)
         df = None
+        if uploaded_file is None:
+            # Clearing the uploader means a later selection, even of the same
+            # file, is a deliberate new-upload action.
+            st.session_state.processed_upload_fingerprint = None
         if uploaded_file is not None:
-            st.session_state.current_saved_dashboard_id = None
-            st.session_state.current_dashboard_name = ""
-            st.session_state.save_dashboard_name_input = ""
-            st.session_state.dashboard_layout = None
-            st.session_state.dashboard_load_error = None
-            cache_path, original_name = cache_uploaded_csv(uploaded_file)
-            st.session_state.current_csv_path = cache_path
-            st.session_state.current_csv_name = original_name
+            upload_fingerprint = uploaded_csv_fingerprint(uploaded_file)
+            if st.session_state.processed_upload_fingerprint != upload_fingerprint:
+                st.session_state.current_saved_dashboard_id = None
+                st.session_state.current_dashboard_name = ""
+                st.session_state.save_dashboard_name_input = ""
+                st.session_state.dashboard_layout = None
+                st.session_state.dashboard_load_error = None
+                cache_path, original_name = cache_uploaded_csv(uploaded_file)
+                st.session_state.current_csv_path = cache_path
+                st.session_state.current_csv_name = original_name
+                st.session_state.processed_upload_fingerprint = upload_fingerprint
+                st.session_state.dashboard_unsaved_changes = True
             try:
-                df = pd.read_csv(cache_path)
+                df = pd.read_csv(st.session_state.current_csv_path)
             except Exception as error:
                 st.error(f"Could not read this CSV: {error}")
                 df = None
-            st.session_state.dashboard_unsaved_changes = True
         elif st.session_state.get("current_saved_dashboard_id") and st.session_state.get("current_csv_path") and Path(st.session_state.current_csv_path).exists():
             try:
                 df = pd.read_csv(st.session_state.current_csv_path)

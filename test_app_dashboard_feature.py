@@ -158,6 +158,25 @@ def test_missing_csv_dashboard_refuses_to_open(tmp_path):
     assert "missing" in app.saved_dashboard_error_message(record).lower()
 
 
+def test_uploaded_csv_fingerprint_only_changes_for_a_new_upload():
+    class UploadedCsv:
+        def __init__(self, name, content):
+            self.name = name
+            self.content = content
+
+        def getvalue(self):
+            return self.content
+
+    first_upload = UploadedCsv("data.csv", b"value\n1\n")
+    same_upload_on_rerun = UploadedCsv("data.csv", b"value\n1\n")
+    replacement_upload = UploadedCsv("data.csv", b"value\n2\n")
+
+    fingerprint = app.uploaded_csv_fingerprint(first_upload)
+
+    assert app.uploaded_csv_fingerprint(same_upload_on_rerun) == fingerprint
+    assert app.uploaded_csv_fingerprint(replacement_upload) != fingerprint
+
+
 def test_save_uses_the_current_name_input_and_keeps_it_after_save(tmp_path, monkeypatch):
     saved_path = tmp_path / "saved_dashboards.json"
     monkeypatch.setattr(app, "saved_dashboards_file_path", lambda: saved_path)
