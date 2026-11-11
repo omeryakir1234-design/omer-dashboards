@@ -1270,6 +1270,31 @@ def render_dashboard_workspace(df, panels, appearance, dashboard_settings):
         for panel in panels
     ]
     with elements("dashboard_workspace"):
+        # The Grid is rendered inside the Elements frame, so this must live here
+        # (rather than only in Streamlit's page-level stylesheet) to enlarge the
+        # handle's actual react-resizable mouse target.
+        html.style("""
+            .react-resizable-handle {
+                right: -10px !important;
+                bottom: -10px !important;
+                width: 44px !important;
+                height: 44px !important;
+                z-index: 10 !important;
+                cursor: se-resize !important;
+            }
+            .react-resizable-handle::after {
+                content: "";
+                position: absolute;
+                right: 12px;
+                bottom: 12px;
+                width: 16px;
+                height: 16px;
+                border-right: 3px solid rgba(84, 184, 213, .9);
+                border-bottom: 3px solid rgba(84, 184, 213, .9);
+                border-radius: 2px;
+                pointer-events: none;
+            }
+        """)
         with mui.Box(style=dashboard_workspace_style(appearance)):
             settings = ensure_dashboard_settings(dashboard_settings)
             if settings["title_visible"] and settings["title"].strip():
